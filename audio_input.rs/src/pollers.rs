@@ -28,12 +28,14 @@ impl InputStreamPollerBuilder {
 	}
 
 	///
+	/// Build and start recording the input stream
+	///
 	/// # Errors
 	/// [`InputStreamPollerError`]
 	///
 	/// # Panics
 	/// - if the input device default configuration doesn't use f32 as the sample format
-	pub fn start(&self) -> Result<InputStreamPoller, InputStreamPollerError> {
+	pub fn build(&self) -> Result<InputStreamPoller, InputStreamPollerError> {
 		let device = cpal::default_host()
 			.input_devices()
 			.map_err(|_| InputStreamPollerError::UnableToListDevices)?
