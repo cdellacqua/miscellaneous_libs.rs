@@ -1,16 +1,13 @@
-use core::panic;
 use std::{
-	sync::{
-		atomic::{AtomicBool, Ordering},
-		Arc, Mutex,
-	},
+	sync::{Arc, Condvar, Mutex},
+	thread::{spawn, JoinHandle},
 	time::Duration,
 };
 
 use audio_analysis::buffers::InterleavedAudioSamples;
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
-	BuildStreamError, Device, PlayStreamError, Stream, SupportedStreamConfig,
+	Device, SupportedStreamConfig,
 };
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
@@ -52,16 +49,16 @@ impl InputStreamPollerBuilder {
 			"expected F32 input stream"
 		);
 
-		InputStreamPoller::new(self.buffer_time_duration, &device, config)
+		Ok(InputStreamPoller::new(
+			self.buffer_time_duration,
+			device,
+			config,
+		))
 	}
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum InputStreamPollerError {
-	#[error(transparent)]
-	BuildStreamError(#[from] BuildStreamError),
-	#[error(transparent)]
-	PlayStreamError(#[from] PlayStreamError),
 	#[error("unable to list input devices")]
 	UnableToListDevices,
 	#[error("no available device found")]
@@ -74,16 +71,19 @@ pub struct InputStreamPoller {
 	pub sample_rate: usize,
 	ring_buffer: Arc<Mutex<AllocRingBuffer<f32>>>,
 	pub n_of_channels: usize,
-	sampling: Arc<AtomicBool>,
-	_stream: Stream,
+	sampling_state: Arc<(Mutex<SamplingState>, Condvar)>,
+	stream_supervisor: Option<JoinHandle<()>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SamplingState {
+	Sampling,
+	Cancelled,
+	Error(String),
 }
 
 impl InputStreamPoller {
-	fn new(
-		buffer_time_duration: Duration,
-		device: &Device,
-		config: SupportedStreamConfig,
-	) -> Result<Self, InputStreamPollerError> {
+	fn new(buffer_time_duration: Duration, device: Device, config: SupportedStreamConfig) -> Self {
 		let sample_rate = config.sample_rate().0 as usize;
 		let n_of_channels = config.channels() as usize;
 
@@ -97,51 +97,85 @@ impl InputStreamPoller {
 			buf
 		}));
 
-		let sampling = Arc::new(AtomicBool::new(true));
+		let sampling_state = Arc::new((Mutex::new(SamplingState::Sampling), Condvar::default()));
 
-		let stream = device.build_input_stream(
-			&config.into(),
-			{
-				let ring_buffer = ring_buffer.clone();
-				move |data: &[f32], _: &_| {
-					ring_buffer
-						.with_lock(|b| {
-							for &v in data {
-								b.push(v);
+		let stream_supervisor = spawn({
+			let ring_buffer = ring_buffer.clone();
+			let sampling_state = sampling_state.clone();
+			move || {
+				let stream = device.build_input_stream(
+					&config.into(),
+					{
+						move |data: &[f32], _: &_| {
+							ring_buffer
+								.with_lock_mut(|b| {
+									for &v in data {
+										b.push(v);
+									}
+								})
+								.unwrap();
+						}
+					},
+					{
+						let sampling_state = sampling_state.clone();
+						move |err| {
+							let mut guard = sampling_state.0.lock().unwrap();
+							if matches!(&*guard, SamplingState::Sampling) {
+								*guard = SamplingState::Error(err.to_string());
 							}
-						})
-						.unwrap();
-				}
-			},
-			{
-				let sampling = sampling.clone();
-				move |err| {
-					eprintln!("{err:?}");
-					if sampling.load(Ordering::Relaxed) {
-						sampling.store(false, Ordering::Relaxed);
+							sampling_state.1.notify_one();
+						}
+					},
+					None,
+				);
+				match stream {
+					Err(err) => {
+						sampling_state
+							.0
+							.with_lock_mut(|sampling_error| {
+								*sampling_error = SamplingState::Error(err.to_string());
+							})
+							.unwrap();
 					}
-					// ref: https://github.com/RustAudio/cpal/issues/818
-					// Stream not being Send doesn't allow us to stop it directly here.
-					panic!("CPAL stream error");
+					Ok(stream) => {
+						if let Err(err) = stream.play() {
+							sampling_state
+								.0
+								.with_lock_mut(|sampling_error| {
+									*sampling_error = SamplingState::Error(err.to_string());
+								})
+								.unwrap();
+						} else {
+							let mut guard = sampling_state.0.lock().unwrap();
+							while matches!(&*guard, SamplingState::Sampling) {
+								guard = sampling_state.1.wait(guard).unwrap();
+							}
+
+							drop(stream);
+						}
+					}
 				}
-			},
-			None,
-		)?;
+			}
+		});
 
-		stream.play()?;
-
-		Ok(Self {
+		Self {
 			sample_rate,
 			ring_buffer,
 			n_of_channels,
-			sampling,
-			_stream: stream,
-		})
+			sampling_state,
+			stream_supervisor: Some(stream_supervisor),
+		}
 	}
 
+	///
+	/// # Panics
+	/// - if the mutex guarding the state is poisoned
 	#[must_use]
-	pub fn sampling(&self) -> bool {
-		self.sampling.load(Ordering::Relaxed)
+	pub fn sampling_state(&self) -> SamplingState {
+		self.sampling_state
+			.0
+			.with_lock(SamplingState::clone)
+			.unwrap()
 	}
 
 	/// Get the latest frame snapshot
@@ -151,8 +185,23 @@ impl InputStreamPoller {
 	#[must_use]
 	pub fn latest_snapshot(&self) -> InterleavedAudioSamples {
 		InterleavedAudioSamples::new(
-			self.ring_buffer.with_lock(|b| b.to_vec()).unwrap(),
+			self.ring_buffer
+				.with_lock(ringbuffer::RingBuffer::to_vec)
+				.unwrap(),
 			self.n_of_channels,
 		)
+	}
+}
+
+impl Drop for InputStreamPoller {
+	fn drop(&mut self) {
+		{
+			let mut guard = self.sampling_state.0.lock().unwrap();
+			*guard = SamplingState::Cancelled;
+			self.sampling_state.1.notify_one();
+		}
+		if let Some(supervisor) = self.stream_supervisor.take() {
+			supervisor.join().unwrap();
+		}
 	}
 }
