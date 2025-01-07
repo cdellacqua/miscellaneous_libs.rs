@@ -1,3 +1,4 @@
+use core::panic;
 use std::{
 	sync::{
 		atomic::{AtomicBool, Ordering},
@@ -119,6 +120,9 @@ impl InputStreamPoller {
 					if sampling.load(Ordering::Relaxed) {
 						sampling.store(false, Ordering::Relaxed);
 					}
+					// ref: https://github.com/RustAudio/cpal/issues/818
+					// Stream not being Send doesn't allow us to stop it directly here.
+					panic!("CPAL stream error");
 				}
 			},
 			None,
