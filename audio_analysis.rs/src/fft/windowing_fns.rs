@@ -2,22 +2,19 @@ use std::f32::consts::TAU;
 
 use super::WindowingFn;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HannWindow;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RectangleWindow {
 	rect_width: usize,
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct IdentityWindow;
 
 impl HannWindow {
 	#[must_use]
 	pub fn new() -> Self {
 		Self
-	}
-}
-
-impl Default for HannWindow {
-	fn default() -> Self {
-		Self::new()
 	}
 }
 
@@ -32,12 +29,6 @@ impl IdentityWindow {
 	#[must_use]
 	pub fn new() -> Self {
 		Self
-	}
-}
-
-impl Default for IdentityWindow {
-	fn default() -> Self {
-		Self::new()
 	}
 }
 

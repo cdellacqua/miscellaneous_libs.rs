@@ -1,5 +1,6 @@
 use std::ops::{Index, IndexMut};
 
+#[derive(Debug, Clone)]
 pub struct InterleavedAudioSamples {
 	pub buffer: Vec<f32>,
 	pub n_of_channels: usize,
@@ -43,6 +44,7 @@ impl InterleavedAudioSamples {
 	}
 }
 
+#[derive(Debug, Clone)]
 pub struct InterleavedAudioSamplesIter<'a> {
 	i: usize,
 	max: usize,
