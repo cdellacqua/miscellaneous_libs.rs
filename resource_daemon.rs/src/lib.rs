@@ -39,8 +39,10 @@ fn wake_to_quit<QuitReason: Clone + Send + 'static>(
 	reason: Option<QuitReason>,
 ) {
 	let mut guard = state.0.lock().unwrap();
-	*guard = DaemonState::Quitting(reason);
-	state.1.notify_one();
+	if matches!(&*guard, DaemonState::Holding) {
+		*guard = DaemonState::Quitting(reason);
+		state.1.notify_one();
+	}
 }
 
 impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
@@ -68,20 +70,24 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 								.unwrap();
 						}
 						Ok(resource) => {
-							let mut state = state
+							let s = state
 								.1
 								.wait_while(state.0.lock().unwrap(), |q| {
 									matches!(q, DaemonState::Holding)
 								})
 								.unwrap();
+							// Dropping the guard before dropping the resource is necessary
+							// to prevent potential quit_signal dispatches (i.e. in a looping thread)
+							// from deadlocking on the daemon state.
+							drop(s);
 							drop(resource);
-
-							match *state {
-								DaemonState::Holding => panic!(
-									"internal error: wait_while on condvar exited when predicate was false"
-								),
+							let mut s = state.0.lock().unwrap();
+							match *s {
+								DaemonState::Holding => {
+									*s = DaemonState::Quit(None);
+								}
 								DaemonState::Quitting(ref mut reason) => {
-									*state = DaemonState::Quit(reason.take());
+									*s = DaemonState::Quit(reason.take());
 								}
 								DaemonState::Quit(_) => (),
 							}
