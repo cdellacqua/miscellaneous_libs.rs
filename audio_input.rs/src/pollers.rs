@@ -1,14 +1,14 @@
 use std::{
-	sync::{Arc, Condvar, Mutex},
-	thread::{spawn, JoinHandle},
+	sync::{Arc, Mutex},
 	time::Duration,
 };
 
 use audio_analysis::buffers::InterleavedAudioSamples;
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
-	Device, SupportedStreamConfig,
+	Device, Stream, SupportedStreamConfig,
 };
+use resource_daemon::ResourceDaemon;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use mutex_ext::LockExt;
@@ -29,20 +29,20 @@ impl InputStreamPollerBuilder {
 	/// Build and start recording the input stream
 	///
 	/// # Errors
-	/// [`InputStreamPollerError`]
+	/// [`InputStreamPollerBuilderError`]
 	///
 	/// # Panics
 	/// - if the input device default configuration doesn't use f32 as the sample format
-	pub fn build(&self) -> Result<InputStreamPoller, InputStreamPollerError> {
+	pub fn build(&self) -> Result<InputStreamPoller, InputStreamPollerBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
-			.map_err(|_| InputStreamPollerError::UnableToListDevices)?
+			.map_err(|_| InputStreamPollerBuilderError::UnableToListDevices)?
 			.next()
-			.ok_or(InputStreamPollerError::NoDeviceFound)?;
+			.ok_or(InputStreamPollerBuilderError::NoDeviceFound)?;
 
 		let config = device
 			.default_input_config()
-			.map_err(|_| InputStreamPollerError::NoConfigFound)?;
+			.map_err(|_| InputStreamPollerBuilderError::NoConfigFound)?;
 
 		assert!(
 			matches!(config.sample_format(), cpal::SampleFormat::F32),
@@ -57,8 +57,8 @@ impl InputStreamPollerBuilder {
 	}
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum InputStreamPollerError {
+#[derive(thiserror::Error, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InputStreamPollerBuilderError {
 	#[error("unable to list input devices")]
 	UnableToListDevices,
 	#[error("no available device found")]
@@ -67,18 +67,29 @@ pub enum InputStreamPollerError {
 	NoConfigFound,
 }
 
+#[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub enum InputStreamPollerState {
+	#[error("unable to build stream")]
+	BuildFailed(String),
+	#[error("unable to start stream")]
+	StartFailed(String),
+	#[error("error while sampling")]
+	SamplingError(String),
+	#[error("stopped")]
+	Cancelled,
+}
+
 pub struct InputStreamPoller {
 	pub sample_rate: usize,
 	ring_buffer: Arc<Mutex<AllocRingBuffer<f32>>>,
 	pub n_of_channels: usize,
-	sampling_state: Arc<(Mutex<SamplingState>, Condvar)>,
-	stream_supervisor: Option<JoinHandle<()>>,
+	stream_daemon: ResourceDaemon<Stream, InputStreamPollerState>,
 }
 
 #[derive(Debug, Clone)]
 pub enum SamplingState {
 	Sampling,
-	Stopped(Result<(), String>),
+	Stopped(InputStreamPollerState),
 }
 
 impl InputStreamPoller {
@@ -96,16 +107,13 @@ impl InputStreamPoller {
 			buf
 		}));
 
-		let sampling_state = Arc::new((Mutex::new(SamplingState::Sampling), Condvar::default()));
-
-		let stream_supervisor = spawn({
+		let stream_daemon = ResourceDaemon::new({
 			let ring_buffer = ring_buffer.clone();
-			let sampling_state = sampling_state.clone();
-			move || {
-				let stream = device.build_input_stream(
-					&config.into(),
-					{
-						move |data: &[f32], _: &_| {
+			move |quit_signal| {
+				device
+					.build_input_stream(
+						&config.into(),
+						move |data, _| {
 							ring_buffer
 								.with_lock_mut(|b| {
 									for &v in data {
@@ -113,47 +121,20 @@ impl InputStreamPoller {
 									}
 								})
 								.unwrap();
-						}
-					},
-					{
-						let sampling_state = sampling_state.clone();
+						},
 						move |err| {
-							let mut guard = sampling_state.0.lock().unwrap();
-							if matches!(&*guard, SamplingState::Sampling) {
-								*guard = SamplingState::Stopped(Err(err.to_string()));
-							}
-							sampling_state.1.notify_one();
-						}
-					},
-					None,
-				);
-				match stream {
-					Err(err) => {
-						sampling_state
-							.0
-							.with_lock_mut(|s| {
-								*s = SamplingState::Stopped(Err(err.to_string()));
-							})
-							.unwrap();
-					}
-					Ok(stream) => {
-						if let Err(err) = stream.play() {
-							sampling_state
-								.0
-								.with_lock_mut(|s| {
-									*s = SamplingState::Stopped(Err(err.to_string()));
-								})
-								.unwrap();
-						} else {
-							let mut guard = sampling_state.0.lock().unwrap();
-							while matches!(&*guard, SamplingState::Sampling) {
-								guard = sampling_state.1.wait(guard).unwrap();
-							}
-
-							drop(stream);
-						}
-					}
-				}
+							quit_signal
+								.dispatch(InputStreamPollerState::SamplingError(err.to_string()));
+						},
+						None,
+					)
+					.map_err(|err| InputStreamPollerState::BuildFailed(err.to_string()))
+					.and_then(|stream| {
+						stream
+							.play()
+							.map(|()| stream)
+							.map_err(|err| InputStreamPollerState::StartFailed(err.to_string()))
+					})
 			}
 		});
 
@@ -161,34 +142,27 @@ impl InputStreamPoller {
 			sample_rate,
 			ring_buffer,
 			n_of_channels,
-			sampling_state,
-			stream_supervisor: Some(stream_supervisor),
+			stream_daemon,
 		}
 	}
 
-	///
-	/// # Panics
-	/// - if the mutex guarding the state is poisoned
 	#[must_use]
-	pub fn sampling_state(&self) -> SamplingState {
-		self.sampling_state
-			.0
-			.with_lock(SamplingState::clone)
-			.unwrap()
+	pub fn state(&self) -> SamplingState {
+		match self.stream_daemon.state() {
+			resource_daemon::DaemonState::Holding => SamplingState::Sampling,
+			resource_daemon::DaemonState::Quitting(reason)
+			| resource_daemon::DaemonState::Quit(reason) => {
+				SamplingState::Stopped(reason.unwrap_or(InputStreamPollerState::Cancelled))
+			}
+		}
 	}
 
 	///
 	/// # Panics
 	/// - if the mutex guarding the state is poisoned
 	pub fn stop(&mut self) {
-		{
-			let mut guard = self.sampling_state.0.lock().unwrap();
-			*guard = SamplingState::Stopped(Ok(()));
-			self.sampling_state.1.notify_one();
-		}
-		if let Some(supervisor) = self.stream_supervisor.take() {
-			supervisor.join().unwrap();
-		}
+		self.stream_daemon
+			.give_up(InputStreamPollerState::Cancelled);
 	}
 
 	/// Get the latest frame snapshot
@@ -203,11 +177,5 @@ impl InputStreamPoller {
 				.unwrap(),
 			self.n_of_channels,
 		)
-	}
-}
-
-impl Drop for InputStreamPoller {
-	fn drop(&mut self) {
-		self.stop();
 	}
 }

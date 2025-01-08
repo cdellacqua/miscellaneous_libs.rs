@@ -7,5 +7,6 @@ edition = "2021"
 cpal = "0.15.3"
 mutex_ext = { path = "../mutex_ext.rs" }
 audio_analysis = { path = "../audio_analysis.rs" }
+resource_daemon = { path = "../resource_daemon.rs" }
 ringbuffer = "0.15.0"
 thiserror = "2.0.9"

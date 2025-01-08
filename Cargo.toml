@@ -6,4 +6,5 @@ members = [
 	"audio_input.rs",
 	"math_utils.rs",
 	"mutex_ext.rs",
+	"resource_daemon.rs",
 ]
