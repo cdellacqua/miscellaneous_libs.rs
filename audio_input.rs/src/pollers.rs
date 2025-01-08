@@ -78,8 +78,7 @@ pub struct InputStreamPoller {
 #[derive(Debug, Clone)]
 pub enum SamplingState {
 	Sampling,
-	Cancelled,
-	Error(String),
+	Stopped(Result<(), String>),
 }
 
 impl InputStreamPoller {
@@ -121,7 +120,7 @@ impl InputStreamPoller {
 						move |err| {
 							let mut guard = sampling_state.0.lock().unwrap();
 							if matches!(&*guard, SamplingState::Sampling) {
-								*guard = SamplingState::Error(err.to_string());
+								*guard = SamplingState::Stopped(Err(err.to_string()));
 							}
 							sampling_state.1.notify_one();
 						}
@@ -132,8 +131,8 @@ impl InputStreamPoller {
 					Err(err) => {
 						sampling_state
 							.0
-							.with_lock_mut(|sampling_error| {
-								*sampling_error = SamplingState::Error(err.to_string());
+							.with_lock_mut(|s| {
+								*s = SamplingState::Stopped(Err(err.to_string()));
 							})
 							.unwrap();
 					}
@@ -141,8 +140,8 @@ impl InputStreamPoller {
 						if let Err(err) = stream.play() {
 							sampling_state
 								.0
-								.with_lock_mut(|sampling_error| {
-									*sampling_error = SamplingState::Error(err.to_string());
+								.with_lock_mut(|s| {
+									*s = SamplingState::Stopped(Err(err.to_string()));
 								})
 								.unwrap();
 						} else {
@@ -178,6 +177,20 @@ impl InputStreamPoller {
 			.unwrap()
 	}
 
+	///
+	/// # Panics
+	/// - if the mutex guarding the state is poisoned
+	pub fn stop(&mut self) {
+		{
+			let mut guard = self.sampling_state.0.lock().unwrap();
+			*guard = SamplingState::Stopped(Ok(()));
+			self.sampling_state.1.notify_one();
+		}
+		if let Some(supervisor) = self.stream_supervisor.take() {
+			supervisor.join().unwrap();
+		}
+	}
+
 	/// Get the latest frame snapshot
 	///
 	/// # Panics
@@ -195,13 +208,6 @@ impl InputStreamPoller {
 
 impl Drop for InputStreamPoller {
 	fn drop(&mut self) {
-		{
-			let mut guard = self.sampling_state.0.lock().unwrap();
-			*guard = SamplingState::Cancelled;
-			self.sampling_state.1.notify_one();
-		}
-		if let Some(supervisor) = self.stream_supervisor.take() {
-			supervisor.join().unwrap();
-		}
+		self.stop();
 	}
 }
