@@ -7,8 +7,6 @@ use std::{
 	thread::{self, JoinHandle},
 };
 
-use mutex_ext::LockExt;
-
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DaemonState<QuitReason> {
 	Holding,
@@ -64,10 +62,7 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 					});
 					match resource {
 						Err(err) => {
-							state
-								.0
-								.with_lock_mut(|s| *s = DaemonState::Quit(Some(err)))
-								.unwrap();
+							*state.0.lock().unwrap() = DaemonState::Quit(Some(err)); 
 						}
 						Ok(resource) => {
 							let s = state
