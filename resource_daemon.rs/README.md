@@ -48,7 +48,7 @@ let mut stream_daemon = ResourceDaemon::new({
 
 assert!(matches!(stream_daemon.state(), DaemonState::Holding));
 // ...
-stream_daemon.give_up("cancelled by the user".to_string()); // or, equivalently, drop(stream_daemon);
+stream_daemon.quit("cancelled by the user".to_string()); // or, equivalently, drop(stream_daemon);
 
 assert!(matches!(stream_daemon.state(), DaemonState::Quit(_)));
 ```

@@ -161,8 +161,7 @@ impl InputStreamPoller {
 	/// # Panics
 	/// - if the mutex guarding the state is poisoned
 	pub fn stop(&mut self) {
-		self.stream_daemon
-			.give_up(InputStreamPollerState::Cancelled);
+		self.stream_daemon.quit(InputStreamPollerState::Cancelled);
 	}
 
 	/// Get the latest frame snapshot

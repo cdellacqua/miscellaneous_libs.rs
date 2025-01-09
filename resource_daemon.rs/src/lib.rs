@@ -62,7 +62,7 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 					});
 					match resource {
 						Err(err) => {
-							*state.0.lock().unwrap() = DaemonState::Quit(Some(err)); 
+							*state.0.lock().unwrap() = DaemonState::Quit(Some(err));
 						}
 						Ok(resource) => {
 							let s = state
@@ -108,7 +108,7 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 	/// # Panics
 	/// - if the mutex guarding the state of the associated thread is poisoned
 	/// - if joining the associated thread fails
-	pub fn give_up(&mut self, reason: QuitReason) {
+	pub fn quit(&mut self, reason: QuitReason) {
 		self.wake_to_quit_and_join(Some(reason));
 	}
 
