@@ -60,7 +60,7 @@ impl StftAnalyzer {
 	/// Note: performance-wise, FFT works better when the signal length is a power of two.
 	///
 	/// # Panics
-	/// -
+	/// - if the passed `signal` is not compatible with the configured `samples_per_window`
 	///
 	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint> {
 		let samples = signal.len();

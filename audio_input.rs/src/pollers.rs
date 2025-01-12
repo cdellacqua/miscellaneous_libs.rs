@@ -114,13 +114,11 @@ impl InputStreamPoller {
 					.build_input_stream(
 						&config.into(),
 						move |data, _| {
-							ring_buffer
-								.with_lock_mut(|b| {
-									for &v in data {
-										b.push(v);
-									}
-								})
-								.unwrap();
+							ring_buffer.with_lock_mut(|b| {
+								for &v in data {
+									b.push(v);
+								}
+							});
 						},
 						move |err| {
 							quit_signal
@@ -157,23 +155,17 @@ impl InputStreamPoller {
 		}
 	}
 
-	///
-	/// # Panics
-	/// - if the mutex guarding the state is poisoned
 	pub fn stop(&mut self) {
 		self.stream_daemon.quit(InputStreamPollerState::Cancelled);
 	}
 
+	///
 	/// Get the latest frame snapshot
 	///
-	/// # Panics
-	/// - if the mutex guarding the buffer is poisoned
 	#[must_use]
 	pub fn latest_snapshot(&self) -> InterleavedAudioSamples {
 		InterleavedAudioSamples::new(
-			self.ring_buffer
-				.with_lock(ringbuffer::RingBuffer::to_vec)
-				.unwrap(),
+			self.ring_buffer.with_lock(RingBuffer::to_vec),
 			self.n_of_channels,
 		)
 	}

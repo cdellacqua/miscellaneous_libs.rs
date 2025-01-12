@@ -8,9 +8,23 @@ pub struct InterleavedAudioSamples {
 
 impl InterleavedAudioSamples {
 	#[must_use]
-	pub fn new(buffer: Vec<f32>, n_of_channels: usize) -> Self {
+	pub fn new<Buffer: IntoIterator<Item = f32>>(buffer: Buffer, n_of_channels: usize) -> Self {
 		Self {
-			buffer,
+			buffer: Vec::from_iter(buffer),
+			n_of_channels,
+		}
+	}
+
+	#[must_use]
+	pub fn from_mono(mono: &[f32], n_of_channels: usize) -> Self {
+		Self {
+			buffer: {
+				let mut buf = vec![0.; mono.len() * n_of_channels];
+				buf.iter_mut()
+					.enumerate()
+					.for_each(|(i, v)| *v = mono[i / n_of_channels]);
+				buf
+			},
 			n_of_channels,
 		}
 	}
@@ -110,7 +124,7 @@ mod tests {
 
 	#[test]
 	fn test_snapshot_iterator() {
-		let snapshot = InterleavedAudioSamples::new(vec![1., 2., 3., 4., 5., 6., 7., 8.], 2);
+		let snapshot = InterleavedAudioSamples::new([1., 2., 3., 4., 5., 6., 7., 8.], 2);
 		let iter = &mut snapshot.into_iter();
 		assert_eq!(iter.next(), Some(&[1.0f32, 2.0f32] as &[f32]));
 		assert_eq!(iter.next(), Some(&[3.0f32, 4.0f32] as &[f32]));
@@ -120,10 +134,22 @@ mod tests {
 	}
 	#[test]
 	fn test_snapshot_indexing() {
-		let snapshot = InterleavedAudioSamples::new(vec![1., 2., 3., 4., 5., 6., 7., 8.], 2);
+		let snapshot = InterleavedAudioSamples::new([1., 2., 3., 4., 5., 6., 7., 8.], 2);
 		assert_eq!(snapshot[0], [1., 2.]);
 		assert_eq!(snapshot[1], [3., 4.]);
 		assert_eq!(snapshot[2], [5., 6.]);
 		assert_eq!(snapshot[3], [7., 8.]);
+	}
+	#[test]
+	fn test_from_mono() {
+		let snapshot = InterleavedAudioSamples::from_mono(&[1., 2., 3., 4., 5., 6., 7., 8.], 2);
+		assert_eq!(snapshot[0], [1., 1.]);
+		assert_eq!(snapshot[1], [2., 2.]);
+		assert_eq!(snapshot[2], [3., 3.]);
+		assert_eq!(snapshot[3], [4., 4.]);
+		assert_eq!(snapshot[4], [5., 5.]);
+		assert_eq!(snapshot[5], [6., 6.]);
+		assert_eq!(snapshot[6], [7., 7.]);
+		assert_eq!(snapshot[7], [8., 8.]);
 	}
 }
