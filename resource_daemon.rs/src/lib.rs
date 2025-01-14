@@ -21,6 +21,10 @@ pub struct ResourceDaemon<T, QuitReason: Clone + Send + 'static> {
 	thread_handle: Option<JoinHandle<()>>,
 }
 
+// SAFETY: the T is not held by the ResourceDaemon struct but
+// rather by the threat it spawns in the constructor.
+unsafe impl<T, QuitReason: Clone + Send + 'static> Send for ResourceDaemon<T, QuitReason> {}
+
 #[derive(Debug, Clone)]
 pub struct QuitSignal<QuitReason: Clone + Send + 'static>(
 	Arc<(Mutex<DaemonState<QuitReason>>, Condvar)>,

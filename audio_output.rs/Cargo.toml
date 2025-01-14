@@ -1,0 +1,11 @@
+[package]
+name = "audio_output"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# cpal = "0.15.3"
+cpal = { git = "https://github.com/cdellacqua/cpal.rs.git", rev = "ed62b1b85dccebe9f228c8a537886472c1e3157e" }
+mutex_ext = { path = "../mutex_ext.rs" }
+resource_daemon = { path = "../resource_daemon.rs" }
+thiserror = "2.0.9"

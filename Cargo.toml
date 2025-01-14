@@ -4,6 +4,7 @@ resolver = "2"
 members = [
 	"audio_analysis.rs",
 	"audio_input.rs",
+	"audio_output.rs",
 	"math_utils.rs",
 	"mutex_ext.rs",
 	"resource_daemon.rs",
