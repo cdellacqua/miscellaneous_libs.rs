@@ -34,19 +34,15 @@ impl InterleavedAudioSamples {
 		InterleavedAudioSamplesIter::new(&self.buffer, self.n_of_channels)
 	}
 
-	///
 	/// The number of frames corresponds to the number of sampling points in time, regardless of the number
 	/// of channels.
-	///
 	#[must_use]
 	pub fn n_of_frames(&self) -> usize {
 		self.buffer.len() / self.n_of_channels
 	}
 
-	///
 	/// Converts this interleaved collection to a raw buffer containing the samples of a mono track.
 	/// Samples in the mono track are the average of all the channel samples for each point in time.
-	///
 	#[must_use]
 	pub fn to_mono(&self) -> Vec<f32> {
 		self.iter()

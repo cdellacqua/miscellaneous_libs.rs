@@ -28,7 +28,6 @@ impl OscillatorBuilder {
 		}
 	}
 
-	///
 	/// Build and start output stream
 	///
 	/// # Errors

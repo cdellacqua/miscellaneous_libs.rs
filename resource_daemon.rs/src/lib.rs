@@ -106,7 +106,6 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 		}
 	}
 
-	///
 	/// Drop the associated resource and stops the daemon thread
 	///
 	/// # Panics
@@ -116,7 +115,6 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 		self.wake_to_quit_and_join(Some(reason));
 	}
 
-	///
 	/// # Panics
 	/// - if the mutex guarding the state of the associated thread is poisoned
 	#[must_use]

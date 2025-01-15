@@ -21,7 +21,6 @@ impl AudioPlayerBuilder {
 		Self {}
 	}
 
-	///
 	/// Build and start output stream
 	///
 	/// # Errors

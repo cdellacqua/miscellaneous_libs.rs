@@ -25,7 +25,6 @@ impl InputStreamPollerBuilder {
 		}
 	}
 
-	///
 	/// Build and start recording the input stream
 	///
 	/// # Errors
@@ -159,9 +158,7 @@ impl InputStreamPoller {
 		self.stream_daemon.quit(InputStreamPollerState::Cancelled);
 	}
 
-	///
 	/// Get the latest frame snapshot
-	///
 	#[must_use]
 	pub fn latest_snapshot(&self) -> InterleavedAudioSamples {
 		InterleavedAudioSamples::new(
