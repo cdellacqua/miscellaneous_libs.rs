@@ -2,8 +2,11 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
-use crate::{AudioOutputBuilderError, AudioPlayer, AudioPlayerBuilder, SamplingState};
 use std::f32::consts::TAU;
+
+use crate::{AudioStreamBuilderError, AudioStreamSamplingState};
+
+use super::playback::{AudioPlayer, AudioPlayerBuilder};
 
 #[derive(Debug, Clone)]
 pub struct OscillatorBuilder {
@@ -31,11 +34,11 @@ impl OscillatorBuilder {
 	/// Build and start output stream
 	///
 	/// # Errors
-	/// [`AudioOutputBuilderError`]
+	/// [`AudioStreamBuilderError`]
 	///
 	/// # Panics
 	/// - if the output device default configuration doesn't use f32 as the sample format
-	pub fn build(&self) -> Result<Oscillator, AudioOutputBuilderError> {
+	pub fn build(&self) -> Result<Oscillator, AudioStreamBuilderError> {
 		let player = self.player_builder.build()?;
 
 		Ok(Oscillator::new(player, self.frequencies.clone(), self.mute))
@@ -67,7 +70,7 @@ impl Oscillator {
 	}
 
 	#[must_use]
-	pub fn state(&self) -> SamplingState {
+	pub fn state(&self) -> AudioStreamSamplingState {
 		self.player.state()
 	}
 

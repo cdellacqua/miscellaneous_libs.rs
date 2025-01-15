@@ -3,7 +3,6 @@ use std::{
 	time::Duration,
 };
 
-use audio_analysis::buffers::InterleavedAudioSamples;
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
 	Device, Stream, SupportedStreamConfig,
@@ -12,7 +11,7 @@ use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
-use crate::common::{AudioInputBuilderError, AudioInputState, SamplingState};
+use crate::{buffers::InterleavedAudioSamples, common::{AudioStreamBuilderError, AudioStreamSamplingState, AudioStreamError}};
 // TODO: Record with start/collect/stop and capacity
 pub struct AudioRecorderBuilder {
 	capacity: Duration,
@@ -27,20 +26,20 @@ impl AudioRecorderBuilder {
 	/// Build and start recording the input stream
 	///
 	/// # Errors
-	/// [`AudioInputBuilderError`]
+	/// [`AudioStreamBuilderError`]
 	///
 	/// # Panics
 	/// - if the input device default configuration doesn't use f32 as the sample format
-	pub fn build(&self) -> Result<AudioRecorder, AudioInputBuilderError> {
+	pub fn build(&self) -> Result<AudioRecorder, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
-			.map_err(|_| AudioInputBuilderError::UnableToListDevices)?
+			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
 			.next()
-			.ok_or(AudioInputBuilderError::NoDeviceFound)?;
+			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
 
 		let config = device
 			.default_input_config()
-			.map_err(|_| AudioInputBuilderError::NoConfigFound)?;
+			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?;
 
 		assert!(
 			matches!(config.sample_format(), cpal::SampleFormat::F32),
@@ -56,7 +55,7 @@ pub struct AudioRecorder {
 	buffer: Arc<Mutex<Vec<f32>>>,
 	capacity: Duration,
 	n_of_channels: usize,
-	stream_daemon: ResourceDaemon<Stream, AudioInputState>,
+	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
 impl AudioRecorder {
@@ -87,16 +86,16 @@ impl AudioRecorder {
 							});
 						},
 						move |err| {
-							quit_signal.dispatch(AudioInputState::SamplingError(err.to_string()));
+							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
 						},
 						None,
 					)
-					.map_err(|err| AudioInputState::BuildFailed(err.to_string()))
+					.map_err(|err| AudioStreamError::BuildFailed(err.to_string()))
 					.and_then(|stream| {
 						stream
 							.play()
 							.map(|()| stream)
-							.map_err(|err| AudioInputState::StartFailed(err.to_string()))
+							.map_err(|err| AudioStreamError::StartFailed(err.to_string()))
 					})
 			}
 		});
@@ -111,18 +110,18 @@ impl AudioRecorder {
 	}
 
 	#[must_use]
-	pub fn state(&self) -> SamplingState {
+	pub fn state(&self) -> AudioStreamSamplingState {
 		match self.stream_daemon.state() {
-			resource_daemon::DaemonState::Holding => SamplingState::Sampling,
+			resource_daemon::DaemonState::Holding => AudioStreamSamplingState::Sampling,
 			resource_daemon::DaemonState::Quitting(reason)
 			| resource_daemon::DaemonState::Quit(reason) => {
-				SamplingState::Stopped(reason.unwrap_or(AudioInputState::Cancelled))
+				AudioStreamSamplingState::Stopped(reason.unwrap_or(AudioStreamError::Cancelled))
 			}
 		}
 	}
 
 	pub fn stop(&mut self) {
-		self.stream_daemon.quit(AudioInputState::Cancelled);
+		self.stream_daemon.quit(AudioStreamError::Cancelled);
 	}
 
 	/// Get the latest snapshot

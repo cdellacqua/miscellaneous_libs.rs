@@ -1,12 +1,12 @@
 #[derive(Debug, Clone)]
-pub enum SamplingState {
+pub enum AudioStreamSamplingState {
 	Sampling,
-	Stopped(AudioOutputState),
+	Stopped(AudioStreamError),
 }
 
-#[derive(thiserror::Error, Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AudioOutputBuilderError {
-	#[error("unable to list output devices")]
+#[derive(thiserror::Error, Debug, Clone, Copy)]
+pub enum AudioStreamBuilderError {
+	#[error("unable to list Input devices")]
 	UnableToListDevices,
 	#[error("no available device found")]
 	NoDeviceFound,
@@ -14,8 +14,8 @@ pub enum AudioOutputBuilderError {
 	NoConfigFound,
 }
 
-#[derive(thiserror::Error, Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub enum AudioOutputState {
+#[derive(thiserror::Error, Debug, Clone)]
+pub enum AudioStreamError {
 	#[error("unable to build stream")]
 	BuildFailed(String),
 	#[error("unable to start stream")]

@@ -2,9 +2,11 @@ use std::{ops::RangeInclusive, sync::Arc};
 
 use rustfft::{num_complex::Complex, Fft, FftPlanner};
 
-use crate::fft::index_to_frequency;
+use crate::analysis::WindowingFn;
 
-use super::{fft_frequency_bins, filtered_frequency_index_range, FftPoint, WindowingFn};
+use super::{
+	fft_frequency_bins, filtered_frequency_index_range, index_to_frequency, FftPoint,
+};
 
 pub struct StftAnalyzer {
 	sample_rate: usize,

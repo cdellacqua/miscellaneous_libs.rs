@@ -13,7 +13,7 @@ use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
-use crate::{AudioOutputBuilderError, AudioOutputState, SamplingState};
+use crate::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState};
 
 #[derive(Debug, Clone, Default)]
 pub struct AudioPlayerBuilder {}
@@ -27,20 +27,20 @@ impl AudioPlayerBuilder {
 	/// Build and start output stream
 	///
 	/// # Errors
-	/// [`AudioOutputBuilderError`]
+	/// [`AudioStreamBuilderError`]
 	///
 	/// # Panics
 	/// - if the output device default configuration doesn't use f32 as the sample format
-	pub fn build(&self) -> Result<AudioPlayer, AudioOutputBuilderError> {
+	pub fn build(&self) -> Result<AudioPlayer, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.output_devices()
-			.map_err(|_| AudioOutputBuilderError::UnableToListDevices)?
+			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
 			.next()
-			.ok_or(AudioOutputBuilderError::NoDeviceFound)?;
+			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
 
 		let config = device
 			.default_output_config()
-			.map_err(|_| AudioOutputBuilderError::NoConfigFound)?;
+			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?;
 
 		assert!(
 			matches!(config.sample_format(), cpal::SampleFormat::F32),
@@ -55,7 +55,7 @@ pub struct AudioPlayer {
 	sample_rate: usize,
 	mono_track: Arc<Mutex<Box<dyn Iterator<Item = f32> + Send>>>,
 	n_of_channels: usize,
-	stream_daemon: ResourceDaemon<Stream, AudioOutputState>,
+	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
 impl AudioPlayer {
@@ -91,16 +91,16 @@ impl AudioPlayer {
 								});
 						},
 						move |err| {
-							quit_signal.dispatch(AudioOutputState::SamplingError(err.to_string()));
+							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
 						},
 						None,
 					)
-					.map_err(|err| AudioOutputState::BuildFailed(err.to_string()))
+					.map_err(|err| AudioStreamError::BuildFailed(err.to_string()))
 					.and_then(|stream| {
 						stream
 							.play()
 							.map(|()| stream)
-							.map_err(|err| AudioOutputState::StartFailed(err.to_string()))
+							.map_err(|err| AudioStreamError::StartFailed(err.to_string()))
 					})
 			}
 		});
@@ -114,18 +114,18 @@ impl AudioPlayer {
 	}
 
 	#[must_use]
-	pub fn state(&self) -> SamplingState {
+	pub fn state(&self) -> AudioStreamSamplingState {
 		match self.stream_daemon.state() {
-			resource_daemon::DaemonState::Holding => SamplingState::Sampling,
+			resource_daemon::DaemonState::Holding => AudioStreamSamplingState::Sampling,
 			resource_daemon::DaemonState::Quitting(reason)
 			| resource_daemon::DaemonState::Quit(reason) => {
-				SamplingState::Stopped(reason.unwrap_or(AudioOutputState::Cancelled))
+				AudioStreamSamplingState::Stopped(reason.unwrap_or(AudioStreamError::Cancelled))
 			}
 		}
 	}
 
 	pub fn stop(&mut self) {
-		self.stream_daemon.quit(AudioOutputState::Cancelled);
+		self.stream_daemon.quit(AudioStreamError::Cancelled);
 	}
 
 	pub fn set_mono_track<Track: Iterator<Item = f32> + Send + 'static>(

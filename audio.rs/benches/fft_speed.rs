@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use audio_analysis::fft::{self, windowing_fns::HannWindow};
+use audio_analysis::analysis::{fft::StftAnalyzer, windowing_fns::HannWindow};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn bench_fft_impls(c: &mut Criterion) {
@@ -19,7 +19,7 @@ fn bench_fft_impls(c: &mut Criterion) {
 	// 	});
 	// });
 
-	let mut analyzer = fft::StftAnalyzer::new(44_100, sample.len(), (0., 20_000.), HannWindow);
+	let mut analyzer = StftAnalyzer::new(44_100, sample.len(), (0., 20_000.), HannWindow);
 	group.bench_function(BenchmarkId::new("Optimized allocations", "sample"), |b| {
 		b.iter(|| {
 			black_box(analyzer.analyze(&sample));

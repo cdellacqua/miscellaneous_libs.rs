@@ -1,0 +1,27 @@
+[package]
+name = "audio_analysis"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# default = ["analysis"]
+analysis = []
+input = []
+output = []
+
+[dependencies]
+rustfft = "6.2.0"
+cpal = { git = "https://github.com/cdellacqua/cpal.rs.git", rev = "ed62b1b85dccebe9f228c8a537886472c1e3157e" }
+mutex_ext = { path = "../mutex_ext.rs" }
+resource_daemon = { path = "../resource_daemon.rs" }
+thiserror = "2.0.9"
+ringbuffer = "0.15.0"
+
+[dev-dependencies]
+rand = "0.8.5"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "fft_speed"
+harness = false
+required-features = ["analysis"]

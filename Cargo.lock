@@ -49,30 +49,13 @@ checksum = "55cc3b69f167a1ef2e161439aa98aed94e6028e5f9a59be9a6ffb47aef1651f9"
 name = "audio_analysis"
 version = "0.1.0"
 dependencies = [
- "criterion",
- "rand",
- "rustfft",
-]
-
-[[package]]
-name = "audio_input"
-version = "0.1.0"
-dependencies = [
- "audio_analysis",
  "cpal",
+ "criterion",
  "mutex_ext",
+ "rand",
  "resource_daemon",
  "ringbuffer",
- "thiserror 2.0.9",
-]
-
-[[package]]
-name = "audio_output"
-version = "0.1.0"
-dependencies = [
- "cpal",
- "mutex_ext",
- "resource_daemon",
+ "rustfft",
  "thiserror 2.0.9",
 ]
 
