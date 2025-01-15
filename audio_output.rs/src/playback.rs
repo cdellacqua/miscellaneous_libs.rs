@@ -1,6 +1,9 @@
 #![allow(clippy::cast_precision_loss)]
 
-use std::sync::{Arc, Mutex};
+use std::{
+	iter,
+	sync::{Arc, Mutex},
+};
 
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -49,25 +52,16 @@ impl AudioPlayerBuilder {
 }
 
 pub struct AudioPlayer {
-	pub sample_rate: usize,
+	sample_rate: usize,
 	mono_track: Arc<Mutex<Box<dyn Iterator<Item = f32> + Send>>>,
-	pub n_of_channels: usize,
+	n_of_channels: usize,
 	stream_daemon: ResourceDaemon<Stream, AudioOutputState>,
-}
-
-struct NullTrack;
-impl Iterator for NullTrack {
-	type Item = f32;
-
-	fn next(&mut self) -> Option<Self::Item> {
-		Some(0.)
-	}
 }
 
 impl AudioPlayer {
 	fn new(device: Device, config: SupportedStreamConfig) -> Self {
 		let mono_track = Arc::new(Mutex::new(
-			Box::new(NullTrack) as Box<dyn Iterator<Item = f32> + Send>
+			Box::new(iter::empty()) as Box<dyn Iterator<Item = f32> + Send>
 		));
 
 		let n_of_channels = config.channels() as usize;
@@ -140,5 +134,15 @@ impl AudioPlayer {
 	) {
 		self.mono_track
 			.with_lock_mut(|f| *f = Box::new(mono_track) as Box<dyn Iterator<Item = f32> + Send>);
+	}
+
+	#[must_use]
+	pub fn sample_rate(&self) -> usize {
+		self.sample_rate
+	}
+
+	#[must_use]
+	pub fn n_of_channels(&self) -> usize {
+		self.n_of_channels
 	}
 }

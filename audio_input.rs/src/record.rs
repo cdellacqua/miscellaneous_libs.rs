@@ -9,22 +9,19 @@ use cpal::{
 	Device, Stream, SupportedStreamConfig,
 };
 use resource_daemon::ResourceDaemon;
-use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use mutex_ext::LockExt;
 
 use crate::common::{AudioInputBuilderError, AudioInputState, SamplingState};
-
-pub struct InputStreamPollerBuilder {
-	buffer_time_duration: Duration,
+// TODO: Record with start/collect/stop and capacity
+pub struct AudioRecorderBuilder {
+	capacity: Duration,
 }
 
-impl InputStreamPollerBuilder {
+impl AudioRecorderBuilder {
 	#[must_use]
-	pub fn new(buffer_time_duration: Duration) -> Self {
-		Self {
-			buffer_time_duration,
-		}
+	pub fn new(capacity: Duration) -> Self {
+		Self { capacity }
 	}
 
 	/// Build and start recording the input stream
@@ -34,7 +31,7 @@ impl InputStreamPollerBuilder {
 	///
 	/// # Panics
 	/// - if the input device default configuration doesn't use f32 as the sample format
-	pub fn build(&self) -> Result<InputStreamPoller, AudioInputBuilderError> {
+	pub fn build(&self) -> Result<AudioRecorder, AudioInputBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
 			.map_err(|_| AudioInputBuilderError::UnableToListDevices)?
@@ -50,44 +47,40 @@ impl InputStreamPollerBuilder {
 			"expected F32 input stream"
 		);
 
-		Ok(InputStreamPoller::new(
-			self.buffer_time_duration,
-			device,
-			config,
-		))
+		Ok(AudioRecorder::new(self.capacity, device, config))
 	}
 }
 
-pub struct InputStreamPoller {
+pub struct AudioRecorder {
 	sample_rate: usize,
-	ring_buffer: Arc<Mutex<AllocRingBuffer<f32>>>,
+	buffer: Arc<Mutex<Vec<f32>>>,
+	capacity: Duration,
 	n_of_channels: usize,
 	stream_daemon: ResourceDaemon<Stream, AudioInputState>,
 }
 
-impl InputStreamPoller {
-	fn new(buffer_time_duration: Duration, device: Device, config: SupportedStreamConfig) -> Self {
+impl AudioRecorder {
+	fn new(capacity: Duration, device: Device, config: SupportedStreamConfig) -> Self {
 		let sample_rate = config.sample_rate().0 as usize;
 		let n_of_channels = config.channels() as usize;
 
-		let samples_per_channel =
-			sample_rate * buffer_time_duration.as_micros() as usize / 1_000_000;
+		let samples_per_channel = sample_rate * capacity.as_micros() as usize / 1_000_000;
 		let buffer_size = n_of_channels * samples_per_channel;
 
-		let ring_buffer = Arc::new(Mutex::new({
-			let mut buf = AllocRingBuffer::new(buffer_size);
+		let buffer = Arc::new(Mutex::new({
+			let mut buf = Vec::with_capacity(buffer_size);
 			buf.fill(0.);
 			buf
 		}));
 
 		let stream_daemon = ResourceDaemon::new({
-			let ring_buffer = ring_buffer.clone();
+			let buffer = buffer.clone();
 			move |quit_signal| {
 				device
 					.build_input_stream(
 						&config.into(),
 						move |data, _| {
-							ring_buffer.with_lock_mut(|b| {
+							buffer.with_lock_mut(|b| {
 								for &v in data {
 									b.push(v);
 								}
@@ -110,7 +103,8 @@ impl InputStreamPoller {
 
 		Self {
 			sample_rate,
-			ring_buffer,
+			buffer,
+			capacity,
 			n_of_channels,
 			stream_daemon,
 		}
@@ -134,10 +128,12 @@ impl InputStreamPoller {
 	/// Get the latest snapshot
 	#[must_use]
 	pub fn latest_snapshot(&self) -> InterleavedAudioSamples {
-		InterleavedAudioSamples::new(
-			self.n_of_channels,
-			self.ring_buffer.with_lock(RingBuffer::to_vec),
-		)
+		InterleavedAudioSamples::new(self.n_of_channels, self.buffer.with_lock(Vec::clone))
+	}
+
+	#[must_use]
+	pub fn capacity(&self) -> Duration {
+		self.capacity
 	}
 
 	#[must_use]

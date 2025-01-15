@@ -43,17 +43,17 @@ impl OscillatorBuilder {
 }
 
 pub struct Oscillator {
-	pub sample_rate: usize,
+	sample_rate: usize,
 	frequencies: Vec<f32>,
 	mute: bool,
-	pub n_of_channels: usize,
+	n_of_channels: usize,
 	player: AudioPlayer,
 }
 
 impl Oscillator {
 	fn new(mut player: AudioPlayer, frequencies: Vec<f32>, mute: bool) -> Self {
-		let n_of_channels = player.n_of_channels;
-		let sample_rate = player.sample_rate;
+		let n_of_channels = player.n_of_channels();
+		let sample_rate = player.sample_rate();
 
 		let track = Self::generate_track(&frequencies, sample_rate, mute);
 		player.set_mono_track(track.into_iter());
@@ -121,6 +121,16 @@ impl Oscillator {
 
 	pub fn mute(&mut self) -> bool {
 		self.mute
+	}
+
+	#[must_use]
+	pub fn sample_rate(&self) -> usize {
+		self.sample_rate
+	}
+
+	#[must_use]
+	pub fn n_of_channels(&self) -> usize {
+		self.n_of_channels
 	}
 }
 

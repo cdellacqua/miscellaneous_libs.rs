@@ -2,13 +2,13 @@ use std::ops::{Index, IndexMut};
 
 #[derive(Debug, Clone)]
 pub struct InterleavedAudioSamples {
-	pub buffer: Vec<f32>,
-	pub n_of_channels: usize,
+	buffer: Vec<f32>,
+	n_of_channels: usize,
 }
 
 impl InterleavedAudioSamples {
 	#[must_use]
-	pub fn new<Buffer: IntoIterator<Item = f32>>(buffer: Buffer, n_of_channels: usize) -> Self {
+	pub fn new<Buffer: IntoIterator<Item = f32>>(n_of_channels: usize, buffer: Buffer) -> Self {
 		Self {
 			buffer: Vec::from_iter(buffer),
 			n_of_channels,
@@ -16,7 +16,7 @@ impl InterleavedAudioSamples {
 	}
 
 	#[must_use]
-	pub fn from_mono(mono: &[f32], n_of_channels: usize) -> Self {
+	pub fn from_mono(n_of_channels: usize, mono: &[f32]) -> Self {
 		Self {
 			buffer: {
 				let mut buf = vec![0.; mono.len() * n_of_channels];
@@ -51,6 +51,23 @@ impl InterleavedAudioSamples {
 				return channels.iter().sum::<f32>() / self.n_of_channels as f32;
 			})
 			.collect()
+	}
+
+	#[must_use]
+	pub fn n_of_channels(&self) -> usize {
+		self.n_of_channels
+	}
+
+	/// Retrieves a clone of the current buffer
+	#[must_use]
+	pub fn buffer(&self) -> Vec<f32> {
+		self.buffer.clone()
+	}
+
+	/// Extract the raw of the current buffer
+	#[must_use]
+	pub fn into_raw(self) -> (usize, Vec<f32>) {
+		(self.n_of_channels, self.buffer)
 	}
 }
 
@@ -120,7 +137,7 @@ mod tests {
 
 	#[test]
 	fn test_snapshot_iterator() {
-		let snapshot = InterleavedAudioSamples::new([1., 2., 3., 4., 5., 6., 7., 8.], 2);
+		let snapshot = InterleavedAudioSamples::new(2, [1., 2., 3., 4., 5., 6., 7., 8.]);
 		let iter = &mut snapshot.into_iter();
 		assert_eq!(iter.next(), Some(&[1.0f32, 2.0f32] as &[f32]));
 		assert_eq!(iter.next(), Some(&[3.0f32, 4.0f32] as &[f32]));
@@ -130,7 +147,7 @@ mod tests {
 	}
 	#[test]
 	fn test_snapshot_indexing() {
-		let snapshot = InterleavedAudioSamples::new([1., 2., 3., 4., 5., 6., 7., 8.], 2);
+		let snapshot = InterleavedAudioSamples::new(2, [1., 2., 3., 4., 5., 6., 7., 8.]);
 		assert_eq!(snapshot[0], [1., 2.]);
 		assert_eq!(snapshot[1], [3., 4.]);
 		assert_eq!(snapshot[2], [5., 6.]);
@@ -138,7 +155,7 @@ mod tests {
 	}
 	#[test]
 	fn test_from_mono() {
-		let snapshot = InterleavedAudioSamples::from_mono(&[1., 2., 3., 4., 5., 6., 7., 8.], 2);
+		let snapshot = InterleavedAudioSamples::from_mono(2, &[1., 2., 3., 4., 5., 6., 7., 8.]);
 		assert_eq!(snapshot[0], [1., 1.]);
 		assert_eq!(snapshot[1], [2., 2.]);
 		assert_eq!(snapshot[2], [3., 3.]);
