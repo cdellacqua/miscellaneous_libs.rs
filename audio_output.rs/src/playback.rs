@@ -84,10 +84,13 @@ impl AudioPlayer {
 						move |output: &mut [f32], _| {
 							let output_frames = output.len() / n_of_channels;
 
-							let frames = mono_track
+							let samples = mono_track
 								.with_lock_mut(|m| m.take(output_frames).collect::<Vec<_>>());
-assert_eq!(frames.len(), output_frames);
-							frames
+
+							// clean the output as it may contain dirty values from a previous call
+							output.fill(0.);
+
+							samples
 								.iter()
 								.zip(output.chunks_mut(n_of_channels))
 								.for_each(|(&sample, frame)| {
