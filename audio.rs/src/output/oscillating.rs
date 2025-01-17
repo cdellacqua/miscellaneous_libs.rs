@@ -4,7 +4,10 @@
 
 use std::f32::consts::TAU;
 
-use crate::{AudioStreamBuilderError, AudioStreamSamplingState};
+use crate::{
+	buffers::{AudioFrameFactory, AudioFrameTrait, InterleavedAudioBufferFactory},
+	AudioStreamBuilderError, AudioStreamSamplingState,
+};
 
 use super::playback::{AudioPlayer, AudioPlayerBuilder};
 
@@ -58,8 +61,8 @@ impl Oscillator {
 		let n_of_channels = player.n_of_channels();
 		let sample_rate = player.sample_rate();
 
-		let track = Self::generate_track(&frequencies, sample_rate, mute);
-		player.set_mono_track(track.into_iter());
+		let signal = Self::generate_signal(&frequencies, sample_rate, n_of_channels, mute);
+		player.set_signal(signal);
 		Self {
 			sample_rate,
 			frequencies,
@@ -78,33 +81,67 @@ impl Oscillator {
 		self.player.stop();
 	}
 
-	fn generate_track(
+	fn generate_signal(
 		frequencies: &[f32],
 		sample_rate: usize,
+		n_of_channels: usize,
 		mute: bool,
-	) -> Box<dyn Iterator<Item = f32> + Send + 'static> {
+	) -> Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync + 'static> {
 		if mute || frequencies.is_empty() {
-			Box::new((0..sample_rate).cycle().map(|_| 0.))
+			Box::new(
+				(0..sample_rate)
+					.cycle()
+					.map(move |_| AudioFrameFactory::build(vec![0.; n_of_channels])),
+			)
 		} else {
 			let frequencies = frequencies.to_vec();
 			let wave_magnitude = 1. / frequencies.len().max(1) as f32;
 
-			Box::new((0..sample_rate).cycle().map(move |i| {
-				frequencies
-					.iter()
-					.map(|f| {
-						f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32)) * wave_magnitude
+			// Box::new((0..sample_rate).cycle().map(move |i| {
+			// 	AudioFrameFactory::build(vec![
+			// 		frequencies
+			// 			.iter()
+			// 			.map(|f| {
+			// 				f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32))
+			// 					* wave_magnitude
+			// 			})
+			// 			.sum::<f32>();
+			// 		n_of_channels
+			// 	])
+			// }))
+
+			// Experiment: pre-compute all values
+			let interleaved = InterleavedAudioBufferFactory::build(
+				n_of_channels,
+				(0..sample_rate)
+					.flat_map(|i| {
+						let sample = frequencies
+							.iter()
+							.map(|f| {
+								f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32))
+									* wave_magnitude
+							})
+							.sum::<f32>();
+
+						(0..n_of_channels).map(move |_| sample)
 					})
-					.sum::<f32>()
-			}))
+					.collect::<Vec<_>>(),
+			);
+
+			Box::new(
+				(0..sample_rate)
+					.cycle()
+					.map(move |i| interleaved.at_boxed(i)),
+			)
 		}
 	}
 
 	pub fn set_frequencies(&mut self, frequencies: &[f32]) {
 		self.frequencies = frequencies.to_vec();
-		self.player.set_mono_track(Self::generate_track(
+		self.player.set_signal(Self::generate_signal(
 			&self.frequencies,
 			self.sample_rate,
+			self.n_of_channels,
 			self.mute,
 		));
 	}
@@ -115,9 +152,10 @@ impl Oscillator {
 
 	pub fn set_mute(&mut self, mute: bool) {
 		self.mute = mute;
-		self.player.set_mono_track(Self::generate_track(
+		self.player.set_signal(Self::generate_signal(
 			&self.frequencies,
 			self.sample_rate,
+			self.n_of_channels,
 			self.mute,
 		));
 	}

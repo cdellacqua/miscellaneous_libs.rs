@@ -1,11 +1,14 @@
 use std::borrow::{Borrow, BorrowMut};
 
-use super::{InterleavedAudioBuffer, InterleavedAudioBufferTrait, InterleavedAudioBufferTraitMut};
+use super::{
+	AudioFrame, AudioFrameTrait, AudioFrameTraitMut, InterleavedAudioBuffer,
+	InterleavedAudioBufferTrait, InterleavedAudioBufferTraitMut,
+};
 
 pub struct InterleavedAudioBufferFactory;
 
 impl InterleavedAudioBufferFactory {
-	pub fn build<Buffer: Borrow<[f32]> + 'static>(
+	pub fn build<Buffer: Borrow<[f32]> + Send + Sync + 'static>(
 		n_of_channels: usize,
 		raw_buffer: Buffer,
 	) -> Box<dyn InterleavedAudioBufferTrait> {
@@ -36,7 +39,7 @@ impl InterleavedAudioBufferFactory {
 		}
 	}
 
-	pub fn build_mut<Buffer: BorrowMut<[f32]> + 'static>(
+	pub fn build_mut<Buffer: BorrowMut<[f32]> + Send + Sync + 'static>(
 		n_of_channels: usize,
 		raw_buffer: Buffer,
 	) -> Box<dyn InterleavedAudioBufferTraitMut> {
@@ -63,6 +66,71 @@ impl InterleavedAudioBufferFactory {
 			20 => Box::new(InterleavedAudioBuffer::<20, Buffer>::new(raw_buffer)),
 			21 => Box::new(InterleavedAudioBuffer::<21, Buffer>::new(raw_buffer)),
 			22 => Box::new(InterleavedAudioBuffer::<22, Buffer>::new(raw_buffer)),
+			_ => unimplemented!(),
+		}
+	}
+}
+
+pub struct AudioFrameFactory;
+
+impl AudioFrameFactory {
+	pub fn build<Buffer: Borrow<[f32]> + Send + Sync + 'static>(
+		raw_buffer: Buffer,
+	) -> Box<dyn AudioFrameTrait> {
+		match raw_buffer.borrow().len() {
+			1 => Box::new(AudioFrame::<1, Buffer>::new(raw_buffer)),
+			2 => Box::new(AudioFrame::<2, Buffer>::new(raw_buffer)),
+			3 => Box::new(AudioFrame::<3, Buffer>::new(raw_buffer)),
+			4 => Box::new(AudioFrame::<4, Buffer>::new(raw_buffer)),
+			5 => Box::new(AudioFrame::<5, Buffer>::new(raw_buffer)),
+			6 => Box::new(AudioFrame::<6, Buffer>::new(raw_buffer)),
+			7 => Box::new(AudioFrame::<7, Buffer>::new(raw_buffer)),
+			8 => Box::new(AudioFrame::<8, Buffer>::new(raw_buffer)),
+			9 => Box::new(AudioFrame::<9, Buffer>::new(raw_buffer)),
+			10 => Box::new(AudioFrame::<10, Buffer>::new(raw_buffer)),
+			11 => Box::new(AudioFrame::<11, Buffer>::new(raw_buffer)),
+			12 => Box::new(AudioFrame::<12, Buffer>::new(raw_buffer)),
+			13 => Box::new(AudioFrame::<13, Buffer>::new(raw_buffer)),
+			14 => Box::new(AudioFrame::<14, Buffer>::new(raw_buffer)),
+			15 => Box::new(AudioFrame::<15, Buffer>::new(raw_buffer)),
+			16 => Box::new(AudioFrame::<16, Buffer>::new(raw_buffer)),
+			17 => Box::new(AudioFrame::<17, Buffer>::new(raw_buffer)),
+			18 => Box::new(AudioFrame::<18, Buffer>::new(raw_buffer)),
+			19 => Box::new(AudioFrame::<19, Buffer>::new(raw_buffer)),
+			20 => Box::new(AudioFrame::<20, Buffer>::new(raw_buffer)),
+			21 => Box::new(AudioFrame::<21, Buffer>::new(raw_buffer)),
+			22 => Box::new(AudioFrame::<22, Buffer>::new(raw_buffer)),
+			_ => unimplemented!(),
+		}
+	}
+
+	pub fn build_mut<Buffer: BorrowMut<[f32]> + Send + Sync + 'static>(
+		n_of_channels: usize,
+		raw_buffer: Buffer,
+	) -> Box<dyn AudioFrameTraitMut> {
+		match n_of_channels {
+			1 => Box::new(AudioFrame::<1, Buffer>::new(raw_buffer)),
+			2 => Box::new(AudioFrame::<2, Buffer>::new(raw_buffer)),
+			3 => Box::new(AudioFrame::<3, Buffer>::new(raw_buffer)),
+			4 => Box::new(AudioFrame::<4, Buffer>::new(raw_buffer)),
+			5 => Box::new(AudioFrame::<5, Buffer>::new(raw_buffer)),
+			6 => Box::new(AudioFrame::<6, Buffer>::new(raw_buffer)),
+			7 => Box::new(AudioFrame::<7, Buffer>::new(raw_buffer)),
+			8 => Box::new(AudioFrame::<8, Buffer>::new(raw_buffer)),
+			9 => Box::new(AudioFrame::<9, Buffer>::new(raw_buffer)),
+			10 => Box::new(AudioFrame::<10, Buffer>::new(raw_buffer)),
+			11 => Box::new(AudioFrame::<11, Buffer>::new(raw_buffer)),
+			12 => Box::new(AudioFrame::<12, Buffer>::new(raw_buffer)),
+			13 => Box::new(AudioFrame::<13, Buffer>::new(raw_buffer)),
+			14 => Box::new(AudioFrame::<14, Buffer>::new(raw_buffer)),
+			15 => Box::new(AudioFrame::<15, Buffer>::new(raw_buffer)),
+			16 => Box::new(AudioFrame::<16, Buffer>::new(raw_buffer)),
+			17 => Box::new(AudioFrame::<17, Buffer>::new(raw_buffer)),
+			18 => Box::new(AudioFrame::<18, Buffer>::new(raw_buffer)),
+			19 => Box::new(AudioFrame::<19, Buffer>::new(raw_buffer)),
+			20 => Box::new(AudioFrame::<20, Buffer>::new(raw_buffer)),
+			21 => Box::new(AudioFrame::<21, Buffer>::new(raw_buffer)),
+			22 => Box::new(AudioFrame::<22, Buffer>::new(raw_buffer)),
 			_ => unimplemented!(),
 		}
 	}

@@ -1,5 +1,5 @@
-mod dyn_factory;
-pub use dyn_factory::*;
+mod dyn_factories;
+pub use dyn_factories::*;
 
 mod common;
 pub use common::*;

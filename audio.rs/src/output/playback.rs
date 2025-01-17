@@ -13,7 +13,9 @@ use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
-use crate::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState};
+use crate::{
+	buffers::AudioFrameTrait, AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
+};
 
 #[derive(Debug, Clone, Default)]
 pub struct AudioPlayerBuilder {}
@@ -51,24 +53,26 @@ impl AudioPlayerBuilder {
 	}
 }
 
+type BoxedInterleavedSignalIter =
+	Arc<Mutex<Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync>>>;
+
 pub struct AudioPlayer {
 	sample_rate: usize,
-	mono_track: Arc<Mutex<Box<dyn Iterator<Item = f32> + Send>>>,
+	interleaved_signal: BoxedInterleavedSignalIter,
 	n_of_channels: usize,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
 impl AudioPlayer {
 	fn new(device: Device, config: SupportedStreamConfig) -> Self {
-		let mono_track = Arc::new(Mutex::new(
-			Box::new(iter::empty()) as Box<dyn Iterator<Item = f32> + Send>
-		));
+		let interleaved_signal = Arc::new(Mutex::new(Box::new(iter::empty())
+			as Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync>));
 
 		let n_of_channels = config.channels() as usize;
 		let sample_rate = config.sample_rate().0 as usize;
 
 		let stream_daemon = ResourceDaemon::new({
-			let mono_track = mono_track.clone();
+			let interleaved_signal = interleaved_signal.clone();
 
 			move |quit_signal| {
 				device
@@ -76,8 +80,9 @@ impl AudioPlayer {
 						&config.into(),
 						move |output: &mut [f32], _| {
 							let output_frames = output.len() / n_of_channels;
+							assert_eq!(output.len() % n_of_channels, 0);
 
-							let samples = mono_track
+							let samples = interleaved_signal
 								.with_lock_mut(|m| m.take(output_frames).collect::<Vec<_>>());
 
 							// clean the output as it may contain dirty values from a previous call
@@ -86,8 +91,8 @@ impl AudioPlayer {
 							samples
 								.iter()
 								.zip(output.chunks_mut(n_of_channels))
-								.for_each(|(&sample, frame)| {
-									frame.fill(sample);
+								.for_each(|(sample, frame)| {
+									frame.copy_from_slice(sample);
 								});
 						},
 						move |err| {
@@ -107,7 +112,7 @@ impl AudioPlayer {
 
 		Self {
 			sample_rate,
-			mono_track,
+			interleaved_signal,
 			n_of_channels,
 			stream_daemon,
 		}
@@ -128,12 +133,14 @@ impl AudioPlayer {
 		self.stream_daemon.quit(AudioStreamError::Cancelled);
 	}
 
-	pub fn set_mono_track<Track: Iterator<Item = f32> + Send + 'static>(
+	pub fn set_signal<Signal: Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync + 'static>(
 		&mut self,
-		mono_track: Track,
+		signal: Signal,
 	) {
-		self.mono_track
-			.with_lock_mut(|f| *f = Box::new(mono_track) as Box<dyn Iterator<Item = f32> + Send>);
+		self.interleaved_signal.with_lock_mut(|f| {
+			*f = Box::new(signal)
+				as Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync>;
+		});
 	}
 
 	#[must_use]

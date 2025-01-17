@@ -9,7 +9,7 @@ use super::{fft_frequency_bins, filtered_frequency_index_range, index_to_frequen
 pub struct StftAnalyzer {
 	sample_rate: usize,
 	samples_per_window: usize,
-	windowing_fn: Box<dyn WindowingFn + Send + 'static>,
+	windowing_fn: Box<dyn WindowingFn + Sync + Send + 'static>,
 	frequency_indices: RangeInclusive<usize>,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex<f32>>,
@@ -21,7 +21,7 @@ impl StftAnalyzer {
 		sample_rate: usize,
 		samples_per_window: usize,
 		frequency_range: (f32, f32),
-		windowing_fn: impl WindowingFn + Send + 'static,
+		windowing_fn: impl WindowingFn + Send + Sync + 'static,
 	) -> Self {
 		let mut planner = FftPlanner::new();
 		let frequency_indices =
@@ -29,7 +29,7 @@ impl StftAnalyzer {
 		Self {
 			sample_rate,
 			samples_per_window,
-			windowing_fn: Box::new(windowing_fn) as Box<dyn WindowingFn + Send + 'static>,
+			windowing_fn: Box::new(windowing_fn) as Box<dyn WindowingFn + Send + Sync + 'static>,
 
 			frequency_indices: frequency_indices.clone(),
 			fft_processor: planner.plan_fft_forward(samples_per_window),
