@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use audio_analysis::analysis::{fft::StftAnalyzer, windowing_fns::HannWindow};
+use audio::analysis::{fft::StftAnalyzer, windowing_fns::HannWindow};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn bench_fft_impls(c: &mut Criterion) {

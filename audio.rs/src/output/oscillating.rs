@@ -37,7 +37,7 @@ impl OscillatorBuilder {
 	/// [`AudioStreamBuilderError`]
 	///
 	/// # Panics
-	/// - if the output device default configuration doesn't use f32 as the sample format
+	/// - if the output device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<Oscillator, AudioStreamBuilderError> {
 		let player = self.player_builder.build()?;
 

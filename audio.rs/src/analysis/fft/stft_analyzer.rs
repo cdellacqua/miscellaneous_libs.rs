@@ -4,9 +4,7 @@ use rustfft::{num_complex::Complex, Fft, FftPlanner};
 
 use crate::analysis::WindowingFn;
 
-use super::{
-	fft_frequency_bins, filtered_frequency_index_range, index_to_frequency, FftPoint,
-};
+use super::{fft_frequency_bins, filtered_frequency_index_range, index_to_frequency, FftPoint};
 
 pub struct StftAnalyzer {
 	sample_rate: usize,
@@ -61,7 +59,7 @@ impl StftAnalyzer {
 	/// Note: performance-wise, FFT works better when the signal length is a power of two.
 	///
 	/// # Panics
-	/// - if the passed `signal` is not compatible with the configured `samples_per_window`
+	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint> {
 		let samples = signal.len();
 

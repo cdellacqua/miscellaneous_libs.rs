@@ -11,7 +11,10 @@ use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
-use crate::{buffers::InterleavedAudioSamples, common::{AudioStreamBuilderError, AudioStreamSamplingState, AudioStreamError}};
+use crate::{
+	buffers::{InterleavedAudioBufferFactory, InterleavedAudioBufferTraitMut},
+	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
+};
 // TODO: Record with start/collect/stop and capacity
 pub struct AudioRecorderBuilder {
 	capacity: Duration,
@@ -29,7 +32,7 @@ impl AudioRecorderBuilder {
 	/// [`AudioStreamBuilderError`]
 	///
 	/// # Panics
-	/// - if the input device default configuration doesn't use f32 as the sample format
+	/// - if the input device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<AudioRecorder, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
@@ -126,8 +129,11 @@ impl AudioRecorder {
 
 	/// Get the latest snapshot
 	#[must_use]
-	pub fn latest_snapshot(&self) -> InterleavedAudioSamples {
-		InterleavedAudioSamples::new(self.n_of_channels, self.buffer.with_lock(Vec::clone))
+	pub fn latest_snapshot(&self) -> Box<dyn InterleavedAudioBufferTraitMut> {
+		InterleavedAudioBufferFactory::build_mut(
+			self.n_of_channels,
+			self.buffer.with_lock(Vec::clone),
+		)
 	}
 
 	#[must_use]

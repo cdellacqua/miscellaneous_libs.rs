@@ -12,8 +12,8 @@ use resource_daemon::ResourceDaemon;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
-	buffers::InterleavedAudioSamples, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState,
+	buffers::{InterleavedAudioBufferFactory, InterleavedAudioBufferTraitMut},
+	AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
 };
 
 pub struct InputStreamPollerBuilder {
@@ -34,7 +34,7 @@ impl InputStreamPollerBuilder {
 	/// [`AudioStreamBuilderError`]
 	///
 	/// # Panics
-	/// - if the input device default configuration doesn't use f32 as the sample format
+	/// - if the input device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<InputStreamPoller, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
@@ -46,6 +46,7 @@ impl InputStreamPollerBuilder {
 			.default_input_config()
 			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?;
 
+		// TODO: normalize everything to f32 and accept any format?
 		assert!(
 			matches!(config.sample_format(), cpal::SampleFormat::F32),
 			"expected F32 input stream"
@@ -134,8 +135,8 @@ impl InputStreamPoller {
 
 	/// Get the latest snapshot
 	#[must_use]
-	pub fn latest_snapshot(&self) -> InterleavedAudioSamples {
-		InterleavedAudioSamples::new(
+	pub fn latest_snapshot(&self) -> Box<dyn InterleavedAudioBufferTraitMut> {
+		InterleavedAudioBufferFactory::build_mut(
 			self.n_of_channels,
 			self.ring_buffer.with_lock(RingBuffer::to_vec),
 		)

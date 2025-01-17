@@ -110,13 +110,13 @@ impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 	///
 	/// # Panics
 	/// - if the mutex guarding the state of the associated thread is poisoned
-	/// - if joining the associated thread fails
+	/// - if joining the associated thread fails.
 	pub fn quit(&mut self, reason: QuitReason) {
 		self.wake_to_quit_and_join(Some(reason));
 	}
 
 	/// # Panics
-	/// - if the mutex guarding the state of the associated thread is poisoned
+	/// - if the mutex guarding the state of the associated thread is poisoned.
 	#[must_use]
 	pub fn state(&self) -> DaemonState<QuitReason> {
 		self.state.0.lock().unwrap().clone()
