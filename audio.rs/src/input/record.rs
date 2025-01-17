@@ -1,4 +1,5 @@
 use std::{
+	mem::replace,
 	sync::{Arc, Mutex},
 	time::Duration,
 };
@@ -15,7 +16,6 @@ use crate::{
 	buffers::{InterleavedAudioBufferFactory, InterleavedAudioBufferTraitMut},
 	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
 };
-// TODO: Record with start/collect/stop and capacity
 pub struct AudioRecorderBuilder {
 	capacity: Duration,
 }
@@ -57,6 +57,7 @@ pub struct AudioRecorder {
 	sample_rate: usize,
 	buffer: Arc<Mutex<Vec<f32>>>,
 	capacity: Duration,
+	capacity_bytes: usize,
 	n_of_channels: usize,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
@@ -69,11 +70,7 @@ impl AudioRecorder {
 		let samples_per_channel = sample_rate * capacity.as_micros() as usize / 1_000_000;
 		let buffer_size = n_of_channels * samples_per_channel;
 
-		let buffer = Arc::new(Mutex::new({
-			let mut buf = Vec::with_capacity(buffer_size);
-			buf.fill(0.);
-			buf
-		}));
+		let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(buffer_size)));
 
 		let stream_daemon = ResourceDaemon::new({
 			let buffer = buffer.clone();
@@ -83,9 +80,9 @@ impl AudioRecorder {
 						&config.into(),
 						move |data, _| {
 							buffer.with_lock_mut(|b| {
-								for &v in data {
-									b.push(v);
-								}
+								data.iter()
+									.take(buffer_size - b.len())
+									.for_each(|&sample| b.push(sample));
 							});
 						},
 						move |err| {
@@ -107,6 +104,7 @@ impl AudioRecorder {
 			sample_rate,
 			buffer,
 			capacity,
+			capacity_bytes: buffer_size,
 			n_of_channels,
 			stream_daemon,
 		}
@@ -123,8 +121,9 @@ impl AudioRecorder {
 		}
 	}
 
-	pub fn stop(&mut self) {
-		self.stream_daemon.quit(AudioStreamError::Cancelled);
+	pub fn take(&mut self) -> Vec<f32> {
+		self.buffer
+			.with_lock_mut(|b| replace(b, Vec::with_capacity(self.capacity_bytes)))
 	}
 
 	/// Get the latest snapshot

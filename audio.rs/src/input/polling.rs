@@ -129,10 +129,6 @@ impl InputStreamPoller {
 		}
 	}
 
-	pub fn stop(&mut self) {
-		self.stream_daemon.quit(AudioStreamError::Cancelled);
-	}
-
 	/// Get the latest snapshot
 	#[must_use]
 	pub fn latest_snapshot(&self) -> Box<dyn InterleavedAudioBufferTraitMut> {
