@@ -23,7 +23,7 @@ impl<'a, const N_CH: usize, Buffer: Borrow<[f32]>> InterleavedAudioBufferIter<'a
 impl<'a, const N_CH: usize, Buffer: Borrow<[f32]>> Iterator
 	for InterleavedAudioBufferIter<'a, N_CH, Buffer>
 {
-	type Item = AudioFrame<N_CH, &'a [f32]>;
+	type Item = AudioFrame<N_CH, &'a [f32; N_CH]>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		if self.i < self.max {
@@ -61,18 +61,17 @@ impl<'a, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 impl<'a, const N_CH: usize, Buffer: BorrowMut<[f32]>> Iterator
 	for InterleavedAudioBufferIterMut<'a, N_CH, Buffer>
 {
-	type Item = AudioFrame<N_CH, &'a mut [f32]>;
+	type Item = AudioFrame<N_CH, &'a mut [f32; N_CH]>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		if self.i < self.max {
-			let slice: &mut [f32] =
-				&mut self.interleaved_samples.raw_buffer_mut()[self.i * N_CH..(self.i + 1) * N_CH];
-
 			// SAFETY:
 			// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
 			// - lifetime compatibility guaranteed by compatible borrows.
-			let frame: AudioFrame<N_CH, &mut [f32]> = AudioFrame::new(unsafe {
-				std::slice::from_raw_parts_mut(slice.as_mut_ptr(), N_CH)
+			let frame: AudioFrame<N_CH, &mut [f32; N_CH]> = AudioFrame::new(unsafe {
+				&mut *self.interleaved_samples.raw_buffer_mut()[self.i * N_CH..(self.i + 1) * N_CH]
+					.as_mut_ptr()
+					.cast::<[_; N_CH]>()
 			});
 
 			self.i += 1;

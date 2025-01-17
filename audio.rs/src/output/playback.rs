@@ -7,23 +7,25 @@ use std::{
 
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
-	Device, Stream, SupportedStreamConfig,
+	Device, SampleFormat, SampleRate, Stream, SupportedStreamConfig,
 };
 use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
 use crate::{
-	buffers::AudioFrameTrait, AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
+	buffers::AudioFrame, AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct AudioPlayerBuilder {}
+pub struct AudioPlayerBuilder<const N_CH: usize> {
+	sample_rate: usize,
+}
 
-impl AudioPlayerBuilder {
+impl<const N_CH: usize> AudioPlayerBuilder<N_CH> {
 	#[must_use]
-	pub fn new() -> Self {
-		Self {}
+	pub fn new(sample_rate: usize) -> Self {
+		Self { sample_rate }
 	}
 
 	/// Build and start output stream
@@ -33,7 +35,7 @@ impl AudioPlayerBuilder {
 	///
 	/// # Panics
 	/// - if the output device default configuration doesn't use f32 as the sample format.
-	pub fn build(&self) -> Result<AudioPlayer, AudioStreamBuilderError> {
+	pub fn build(&self) -> Result<AudioPlayer<N_CH>, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.output_devices()
 			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
@@ -41,34 +43,37 @@ impl AudioPlayerBuilder {
 			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
 
 		let config = device
-			.default_output_config()
-			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?;
+			.supported_input_configs()
+			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
+			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
+			.ok_or(AudioStreamBuilderError::NoConfigFound)?
+			.try_with_sample_rate(SampleRate(self.sample_rate as u32))
+			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
 
+		// TODO: normalize everything to f32 and accept any format?
 		assert!(
 			matches!(config.sample_format(), cpal::SampleFormat::F32),
-			"expected F32 output stream"
+			"expected F32 input stream"
 		);
 
 		Ok(AudioPlayer::new(device, config))
 	}
 }
 
-type BoxedInterleavedSignalIter =
-	Arc<Mutex<Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync>>>;
+pub type InterleavedSignalIter<const N_CH: usize> =
+	Arc<Mutex<Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>>>;
 
-pub struct AudioPlayer {
+pub struct AudioPlayer<const N_CH: usize> {
 	sample_rate: usize,
-	interleaved_signal: BoxedInterleavedSignalIter,
-	n_of_channels: usize,
+	interleaved_signal: InterleavedSignalIter<N_CH>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
-impl AudioPlayer {
+impl<const N_CH: usize> AudioPlayer<N_CH> {
 	fn new(device: Device, config: SupportedStreamConfig) -> Self {
 		let interleaved_signal = Arc::new(Mutex::new(Box::new(iter::empty())
-			as Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync>));
+			as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>));
 
-		let n_of_channels = config.channels() as usize;
 		let sample_rate = config.sample_rate().0 as usize;
 
 		let stream_daemon = ResourceDaemon::new({
@@ -79,21 +84,20 @@ impl AudioPlayer {
 					.build_output_stream(
 						&config.into(),
 						move |output: &mut [f32], _| {
-							let output_frames = output.len() / n_of_channels;
-							assert_eq!(output.len() % n_of_channels, 0);
+							let output_frames = output.len() / N_CH;
+							assert_eq!(output.len() % N_CH, 0);
 
-							let samples = interleaved_signal
+							let frames = interleaved_signal
 								.with_lock_mut(|m| m.take(output_frames).collect::<Vec<_>>());
 
 							// clean the output as it may contain dirty values from a previous call
 							output.fill(0.);
 
-							samples
-								.iter()
-								.zip(output.chunks_mut(n_of_channels))
-								.for_each(|(sample, frame)| {
-									frame.copy_from_slice(sample);
-								});
+							frames.iter().zip(output.chunks_mut(N_CH)).for_each(
+								|(samples, frame)| {
+									frame.copy_from_slice(samples.as_slice());
+								},
+							);
 						},
 						move |err| {
 							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
@@ -113,7 +117,6 @@ impl AudioPlayer {
 		Self {
 			sample_rate,
 			interleaved_signal,
-			n_of_channels,
 			stream_daemon,
 		}
 	}
@@ -133,13 +136,15 @@ impl AudioPlayer {
 		self.stream_daemon.quit(AudioStreamError::Cancelled);
 	}
 
-	pub fn set_signal<Signal: Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync + 'static>(
+	pub fn set_signal<
+		Signal: Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync + 'static,
+	>(
 		&mut self,
 		signal: Signal,
 	) {
 		self.interleaved_signal.with_lock_mut(|f| {
 			*f = Box::new(signal)
-				as Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync>;
+				as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>;
 		});
 	}
 
@@ -150,6 +155,6 @@ impl AudioPlayer {
 
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
-		self.n_of_channels
+		N_CH
 	}
 }

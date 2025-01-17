@@ -4,33 +4,31 @@
 
 use std::f32::consts::TAU;
 
-use crate::{
-	buffers::{AudioFrameFactory, AudioFrameTrait, InterleavedAudioBufferFactory},
-	AudioStreamBuilderError, AudioStreamSamplingState,
-};
+use crate::{buffers::AudioFrame, AudioStreamBuilderError, AudioStreamSamplingState};
 
 use super::playback::{AudioPlayer, AudioPlayerBuilder};
 
+/* TODO: support different set of frequencies per channel? */
 #[derive(Debug, Clone)]
-pub struct OscillatorBuilder {
+pub struct OscillatorBuilder<const N_CH: usize> {
 	frequencies: Vec<f32>,
 	mute: bool,
-	player_builder: AudioPlayerBuilder,
+	player_builder: AudioPlayerBuilder<N_CH>,
 }
 
-impl Default for OscillatorBuilder {
+impl<const N_CH: usize> Default for OscillatorBuilder<N_CH> {
 	fn default() -> Self {
-		Self::new(&[], false)
+		Self::new(44100, &[], false)
 	}
 }
 
-impl OscillatorBuilder {
+impl<const N_CH: usize> OscillatorBuilder<N_CH> {
 	#[must_use]
-	pub fn new(frequencies: &[f32], mute: bool) -> Self {
+	pub fn new(sample_rate: usize, frequencies: &[f32], mute: bool) -> Self {
 		Self {
 			frequencies: frequencies.to_vec(),
 			mute,
-			player_builder: AudioPlayerBuilder::new(),
+			player_builder: AudioPlayerBuilder::new(sample_rate),
 		}
 	}
 
@@ -41,33 +39,30 @@ impl OscillatorBuilder {
 	///
 	/// # Panics
 	/// - if the output device default configuration doesn't use f32 as the sample format.
-	pub fn build(&self) -> Result<Oscillator, AudioStreamBuilderError> {
+	pub fn build(&self) -> Result<Oscillator<N_CH>, AudioStreamBuilderError> {
 		let player = self.player_builder.build()?;
 
 		Ok(Oscillator::new(player, self.frequencies.clone(), self.mute))
 	}
 }
 
-pub struct Oscillator {
+pub struct Oscillator<const N_CH: usize> {
 	sample_rate: usize,
 	frequencies: Vec<f32>,
 	mute: bool,
-	n_of_channels: usize,
-	player: AudioPlayer,
+	player: AudioPlayer<N_CH>,
 }
 
-impl Oscillator {
-	fn new(mut player: AudioPlayer, frequencies: Vec<f32>, mute: bool) -> Self {
-		let n_of_channels = player.n_of_channels();
+impl<const N_CH: usize> Oscillator<N_CH> {
+	fn new(mut player: AudioPlayer<N_CH>, frequencies: Vec<f32>, mute: bool) -> Self {
 		let sample_rate = player.sample_rate();
 
-		let signal = Self::generate_signal(&frequencies, sample_rate, n_of_channels, mute);
+		let signal = Self::generate_signal(sample_rate, &frequencies, mute);
 		player.set_signal(signal);
 		Self {
 			sample_rate,
 			frequencies,
 			mute,
-			n_of_channels,
 			player,
 		}
 	}
@@ -82,66 +77,39 @@ impl Oscillator {
 	}
 
 	fn generate_signal(
-		frequencies: &[f32],
 		sample_rate: usize,
-		n_of_channels: usize,
+		frequencies: &[f32],
 		mute: bool,
-	) -> Box<dyn Iterator<Item = Box<dyn AudioFrameTrait>> + Send + Sync + 'static> {
+	) -> Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync> {
 		if mute || frequencies.is_empty() {
 			Box::new(
 				(0..sample_rate)
 					.cycle()
-					.map(move |_| AudioFrameFactory::build(vec![0.; n_of_channels])),
+					.map(move |_| AudioFrame::new([0.; N_CH])),
 			)
 		} else {
 			let frequencies = frequencies.to_vec();
 			let wave_magnitude = 1. / frequencies.len().max(1) as f32;
 
-			// Box::new((0..sample_rate).cycle().map(move |i| {
-			// 	AudioFrameFactory::build(vec![
-			// 		frequencies
-			// 			.iter()
-			// 			.map(|f| {
-			// 				f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32))
-			// 					* wave_magnitude
-			// 			})
-			// 			.sum::<f32>();
-			// 		n_of_channels
-			// 	])
-			// }))
-
-			// Experiment: pre-compute all values
-			let interleaved = InterleavedAudioBufferFactory::build(
-				n_of_channels,
-				(0..sample_rate)
-					.flat_map(|i| {
-						let sample = frequencies
-							.iter()
-							.map(|f| {
-								f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32))
-									* wave_magnitude
-							})
-							.sum::<f32>();
-
-						(0..n_of_channels).map(move |_| sample)
-					})
-					.collect::<Vec<_>>(),
-			);
-
-			Box::new(
-				(0..sample_rate)
-					.cycle()
-					.map(move |i| interleaved.at_boxed(i)),
-			)
+			Box::new((0..sample_rate).cycle().map(move |i| {
+				AudioFrame::new(
+					[frequencies
+						.iter()
+						.map(|f| {
+							f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32))
+								* wave_magnitude
+						})
+						.sum::<f32>(); N_CH],
+				)
+			}))
 		}
 	}
 
 	pub fn set_frequencies(&mut self, frequencies: &[f32]) {
 		self.frequencies = frequencies.to_vec();
 		self.player.set_signal(Self::generate_signal(
-			&self.frequencies,
 			self.sample_rate,
-			self.n_of_channels,
+			&self.frequencies,
 			self.mute,
 		));
 	}
@@ -153,9 +121,8 @@ impl Oscillator {
 	pub fn set_mute(&mut self, mute: bool) {
 		self.mute = mute;
 		self.player.set_signal(Self::generate_signal(
-			&self.frequencies,
 			self.sample_rate,
-			self.n_of_channels,
+			&self.frequencies,
 			self.mute,
 		));
 	}
@@ -171,7 +138,7 @@ impl Oscillator {
 
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
-		self.n_of_channels
+		N_CH
 	}
 }
 
@@ -182,16 +149,17 @@ mod tests {
 	use super::OscillatorBuilder;
 
 	#[test]
-	#[ignore]
 	fn test_440() {
-		let _oscillator = OscillatorBuilder::new(&[440.], false).build().unwrap();
-		sleep(Duration::from_secs(10));
+		let _oscillator = OscillatorBuilder::<1>::new(44100, &[440.], false)
+			.build()
+			.unwrap();
+		sleep(Duration::from_secs(1));
 	}
 	#[test]
 	fn test_440_333() {
-		let _oscillator = OscillatorBuilder::new(&[440., 333.], false)
+		let _oscillator = OscillatorBuilder::<1>::new(44100, &[440., 333.], false)
 			.build()
 			.unwrap();
-		sleep(Duration::from_secs(10));
+		sleep(Duration::from_secs(1));
 	}
 }

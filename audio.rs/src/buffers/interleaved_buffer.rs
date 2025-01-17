@@ -3,10 +3,7 @@ use std::{
 	ops::{Deref, DerefMut},
 };
 
-use super::{
-	frame_buffer::{AudioFrame, AudioFrameTrait},
-	InterleavedAudioBufferIter, InterleavedAudioBufferIterMut, NOfChannels, ToMono,
-};
+use super::{frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut};
 
 #[derive(Debug, Clone)]
 pub struct InterleavedAudioBuffer<const N_CH: usize, Buffer: Borrow<[f32]>> {
@@ -30,7 +27,7 @@ impl<const N_CH: usize, Buffer: Borrow<[f32]>> InterleavedAudioBuffer<N_CH, Buff
 
 	#[must_use]
 	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by `assert_eq` in the constructor
-	pub fn at(&self, index: usize) -> AudioFrame<N_CH, &[f32]> {
+	pub fn at(&self, index: usize) -> AudioFrame<N_CH, &[f32; N_CH]> {
 		AudioFrame::new(
 			self.raw_buffer.borrow()[index * N_CH..(index + 1) * N_CH]
 				.try_into()
@@ -77,12 +74,17 @@ impl<const N_CH: usize, Buffer: BorrowMut<[f32]>> InterleavedAudioBuffer<N_CH, B
 	/// # Panics
 	/// - if the index is out of bound.
 	#[must_use]
-	pub fn at_mut(&mut self, index: usize) -> AudioFrame<N_CH, &mut [f32]> {
+	pub fn at_mut(&mut self, index: usize) -> AudioFrame<N_CH, &mut [f32; N_CH]> {
 		assert!(index < self.n_of_frames());
 
-		let slice: &mut [f32] = &mut self.raw_buffer.borrow_mut()[index * N_CH..(index + 1) * N_CH];
-
-		AudioFrame::new(slice)
+		// SAFETY:
+		// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
+		// - lifetime compatibility guaranteed by compatible borrows.
+		AudioFrame::new(unsafe {
+			&mut *self.raw_buffer.borrow_mut()[index * N_CH..(index + 1) * N_CH]
+				.as_mut_ptr()
+				.cast::<[_; N_CH]>()
+		})
 	}
 
 	#[must_use]
@@ -100,7 +102,7 @@ impl<'a, const N_CH: usize, Buffer: Borrow<[f32]>> IntoIterator
 	for &'a InterleavedAudioBuffer<N_CH, Buffer>
 {
 	type IntoIter = InterleavedAudioBufferIter<'a, N_CH, Buffer>;
-	type Item = AudioFrame<N_CH, &'a [f32]>;
+	type Item = AudioFrame<N_CH, &'a [f32; N_CH]>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter()
 	}
@@ -110,49 +112,9 @@ impl<'a, const N_CH: usize, Buffer: BorrowMut<[f32]>> IntoIterator
 	for &'a mut InterleavedAudioBuffer<N_CH, Buffer>
 {
 	type IntoIter = InterleavedAudioBufferIterMut<'a, N_CH, Buffer>;
-	type Item = AudioFrame<N_CH, &'a mut [f32]>;
+	type Item = AudioFrame<N_CH, &'a mut [f32; N_CH]>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter_mut()
-	}
-}
-
-pub trait InterleavedAudioBufferBase: Send + Sync {
-	fn at_boxed(&self, index: usize) -> Box<dyn AudioFrameTrait>;
-	// fn iter(&self) -> InterleavedAudioBufferIterTrait;
-	fn n_of_frames(&self) -> usize;
-	fn raw_buffer(&self) -> &[f32];
-}
-
-impl<const N_CH: usize, Buffer: Borrow<[f32]> + Send + Sync> InterleavedAudioBufferBase
-	for InterleavedAudioBuffer<N_CH, Buffer>
-{
-	fn at_boxed(&self, index: usize) -> Box<dyn AudioFrameTrait> {
-		let frame = AudioFrame::<N_CH, _>::new(self.at(index).to_vec());
-		Box::new(frame) as Box<dyn AudioFrameTrait>
-	}
-
-	fn n_of_frames(&self) -> usize {
-		self.n_of_frames()
-	}
-
-	fn raw_buffer(&self) -> &[f32] {
-		self.raw_buffer()
-	}
-}
-
-impl<const N_CH: usize, Buffer: Borrow<[f32]>> ToMono for InterleavedAudioBuffer<N_CH, Buffer> {
-	type Target = Vec<f32>;
-
-	fn to_mono(&self) -> Self::Target {
-		self.to_mono()
-	}
-}
-
-impl<const N_CH: usize, Buffer: Borrow<[f32]>> NOfChannels
-	for InterleavedAudioBuffer<N_CH, Buffer>
-{
-	fn n_of_channels(&self) -> usize {
-		N_CH
 	}
 }
 
@@ -208,30 +170,6 @@ impl<const N_CH: usize, Buffer: BorrowMut<[f32]>> DerefMut
 	}
 }
 
-pub trait InterleavedAudioBufferTrait:
-	InterleavedAudioBufferBase
-	+ ToMono<Target = Vec<f32>>
-	+ NOfChannels
-	/* + Index<usize> */
-	+ Deref<Target = [f32]>
-{
-}
-
-impl<const N_CH: usize, Buffer: Borrow<[f32]> + Send + Sync> InterleavedAudioBufferTrait
-	for InterleavedAudioBuffer<N_CH, Buffer>
-{
-}
-
-pub trait InterleavedAudioBufferTraitMut:
-	InterleavedAudioBufferTrait /* + IndexMut<usize> */ + DerefMut<Target = [f32]>
-{
-}
-
-impl<const N_CH: usize, Buffer: BorrowMut<[f32]> + Send + Sync> InterleavedAudioBufferTraitMut
-	for InterleavedAudioBuffer<N_CH, Buffer>
-{
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -241,22 +179,10 @@ mod tests {
 		let snapshot = InterleavedAudioBuffer::<2, _>::new(&[1., 2., 3., 4., 5., 6., 7., 8.][..]);
 		let mut iter = snapshot.iter();
 
-		assert_eq!(
-			iter.next(),
-			Some(AudioFrame::new(&[1.0f32, 2.0f32] as &[f32]))
-		);
-		assert_eq!(
-			iter.next(),
-			Some(AudioFrame::new(&[3.0f32, 4.0f32] as &[f32]))
-		);
-		assert_eq!(
-			iter.next(),
-			Some(AudioFrame::new(&[5.0f32, 6.0f32] as &[f32]))
-		);
-		assert_eq!(
-			iter.next(),
-			Some(AudioFrame::new(&[7.0f32, 8.0f32] as &[f32]))
-		);
+		assert_eq!(iter.next(), Some(AudioFrame::new(&[1.0f32, 2.0f32])));
+		assert_eq!(iter.next(), Some(AudioFrame::new(&[3.0f32, 4.0f32])));
+		assert_eq!(iter.next(), Some(AudioFrame::new(&[5.0f32, 6.0f32])));
+		assert_eq!(iter.next(), Some(AudioFrame::new(&[7.0f32, 8.0f32])));
 		assert_eq!(iter.next(), None);
 	}
 	#[test]
