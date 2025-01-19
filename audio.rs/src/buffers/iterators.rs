@@ -83,3 +83,40 @@ impl<'a, const N_CH: usize, Buffer: BorrowMut<[f32]>> Iterator
 	}
 }
 // #endregion
+
+// #region owned
+#[derive(Debug)]
+pub struct InterleavedAudioBufferIterOwned<const N_CH: usize, Buffer: Borrow<[f32]>> {
+	i: usize,
+	max: usize,
+	interleaved_samples: InterleavedAudioBuffer<N_CH, Buffer>,
+}
+
+impl<const N_CH: usize, Buffer: Borrow<[f32]>> InterleavedAudioBufferIterOwned<N_CH, Buffer> {
+	pub(crate) fn new(interleaved_samples: InterleavedAudioBuffer<N_CH, Buffer>) -> Self {
+		Self {
+			i: 0,
+			max: interleaved_samples.borrow().n_of_frames(),
+			interleaved_samples,
+		}
+	}
+}
+
+impl<const N_CH: usize, Buffer: Borrow<[f32]>> Iterator
+	for InterleavedAudioBufferIterOwned<N_CH, Buffer>
+{
+	type Item = AudioFrame<N_CH, [f32; N_CH]>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.i < self.max {
+			let frame = self.interleaved_samples.at(self.i).cloned();
+
+			self.i += 1;
+
+			Some(frame)
+		} else {
+			None
+		}
+	}
+}
+// #endregion

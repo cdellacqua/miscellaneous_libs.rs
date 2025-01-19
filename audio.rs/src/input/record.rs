@@ -14,7 +14,7 @@ use mutex_ext::LockExt;
 
 use crate::{
 	buffers::InterleavedAudioBuffer,
-	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
+	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState}, DurationToNOfSamples,
 };
 pub struct AudioRecorderBuilder<const N_CH: usize> {
 	sample_rate: usize,
@@ -74,7 +74,7 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 	fn new(capacity: Duration, device: Device, config: SupportedStreamConfig) -> Self {
 		let sample_rate = config.sample_rate().0 as usize;
 
-		let samples_per_channel = sample_rate * capacity.as_micros() as usize / 1_000_000;
+		let samples_per_channel = capacity.to_n_of_samples(sample_rate);
 		let buffer_size = N_CH * samples_per_channel;
 
 		let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(buffer_size)));
@@ -127,9 +127,11 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 		}
 	}
 
-	pub fn take(&mut self) -> Vec<f32> {
-		self.buffer
-			.with_lock_mut(|b| replace(b, Vec::with_capacity(self.capacity_bytes)))
+	pub fn take(&mut self) -> InterleavedAudioBuffer<N_CH, Vec<f32>> {
+		InterleavedAudioBuffer::new(
+			self.buffer
+				.with_lock_mut(|b| replace(b, Vec::with_capacity(self.capacity_bytes))),
+		)
 	}
 
 	/// Get the latest snapshot

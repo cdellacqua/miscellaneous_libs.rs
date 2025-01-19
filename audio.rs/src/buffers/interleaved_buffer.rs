@@ -1,9 +1,11 @@
-use std::{
-	borrow::{Borrow, BorrowMut},
-	ops::{Deref, DerefMut},
+use std::borrow::{Borrow, BorrowMut};
+
+use super::{
+	frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut,
+	InterleavedAudioBufferIterOwned,
 };
 
-use super::{frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut};
+// TODO: get_channel() -> Vec<f32>
 
 #[derive(Debug, Clone)]
 pub struct InterleavedAudioBuffer<const N_CH: usize, Buffer: Borrow<[f32]>> {
@@ -38,6 +40,11 @@ impl<const N_CH: usize, Buffer: Borrow<[f32]>> InterleavedAudioBuffer<N_CH, Buff
 	#[must_use]
 	pub fn iter(&self) -> InterleavedAudioBufferIter<N_CH, Buffer> {
 		InterleavedAudioBufferIter::new(self)
+	}
+
+	#[must_use]
+	pub fn iter_owned(self) -> InterleavedAudioBufferIterOwned<N_CH, Buffer> {
+		InterleavedAudioBufferIterOwned::new(self)
 	}
 
 	#[must_use]
@@ -118,6 +125,16 @@ impl<'a, const N_CH: usize, Buffer: BorrowMut<[f32]>> IntoIterator
 	}
 }
 
+impl<const N_CH: usize, Buffer: Borrow<[f32]>> IntoIterator
+	for InterleavedAudioBuffer<N_CH, Buffer>
+{
+	type IntoIter = InterleavedAudioBufferIterOwned<N_CH, Buffer>;
+	type Item = AudioFrame<N_CH, [f32; N_CH]>;
+	fn into_iter(self) -> Self::IntoIter {
+		self.iter_owned()
+	}
+}
+
 impl<const N_CH: usize, A: Borrow<[f32]>, B: Borrow<[f32]>>
 	PartialEq<InterleavedAudioBuffer<N_CH, B>> for InterleavedAudioBuffer<N_CH, A>
 {
@@ -153,22 +170,6 @@ impl<const N_CH: usize, A: Borrow<[f32]>, B: Borrow<[f32]>>
 // 		&mut self.raw_buffer.borrow_mut()[index]
 // 	}
 // }
-
-impl<const N_CH: usize, Buffer: Borrow<[f32]>> Deref for InterleavedAudioBuffer<N_CH, Buffer> {
-	type Target = [f32];
-
-	fn deref(&self) -> &Self::Target {
-		self.raw_buffer.borrow()
-	}
-}
-
-impl<const N_CH: usize, Buffer: BorrowMut<[f32]>> DerefMut
-	for InterleavedAudioBuffer<N_CH, Buffer>
-{
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		self.raw_buffer.borrow_mut()
-	}
-}
 
 #[cfg(test)]
 mod tests {

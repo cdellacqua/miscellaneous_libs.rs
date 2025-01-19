@@ -5,7 +5,7 @@ use std::{
 	ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct AudioFrame<const N_CH: usize, Samples: Borrow<[f32; N_CH]>>(Samples);
 
 impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> {
@@ -17,7 +17,11 @@ impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> 
 		AudioFrame(samples)
 	}
 
-	pub fn to_owned(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
+	pub fn copied(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
+		self.cloned()
+	}
+
+	pub fn cloned(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
 		AudioFrame(*self.0.borrow())
 	}
 
@@ -84,8 +88,8 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_to_owned() {
+	fn test_copied() {
 		let snapshot = AudioFrame::new(&[1_f32, 2_f32]);
-		let _a: AudioFrame<2, [f32; 2]> = snapshot.to_owned();
+		let _a: AudioFrame<2, [f32; 2]> = snapshot.copied();
 	}
 }

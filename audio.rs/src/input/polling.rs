@@ -13,7 +13,7 @@ use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
 	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState,
+	AudioStreamSamplingState, DurationToNOfSamples,
 };
 
 pub struct InputStreamPollerBuilder<const N_CH: usize> {
@@ -76,8 +76,7 @@ impl<const N_CH: usize> InputStreamPoller<N_CH> {
 	fn new(buffer_time_duration: Duration, device: Device, config: SupportedStreamConfig) -> Self {
 		let sample_rate = config.sample_rate().0 as usize;
 
-		let samples_per_channel =
-			sample_rate * buffer_time_duration.as_micros() as usize / 1_000_000;
+		let samples_per_channel = buffer_time_duration.to_n_of_samples(sample_rate);
 		let buffer_size = N_CH * samples_per_channel;
 
 		let ring_buffer = Arc::new(Mutex::new({

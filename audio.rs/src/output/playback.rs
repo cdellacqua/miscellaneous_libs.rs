@@ -2,7 +2,7 @@
 
 use std::{
 	iter,
-	sync::{Arc, Mutex},
+	sync::{Arc, Condvar, Mutex},
 };
 
 use cpal::{
@@ -67,6 +67,7 @@ pub struct AudioPlayer<const N_CH: usize> {
 	sample_rate: usize,
 	interleaved_signal: InterleavedSignalIter<N_CH>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
+	playing: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl<const N_CH: usize> AudioPlayer<N_CH> {
@@ -76,8 +77,11 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 
 		let sample_rate = config.sample_rate().0 as usize;
 
+		let playing = Arc::new((Mutex::new(false), Condvar::default()));
+
 		let stream_daemon = ResourceDaemon::new({
 			let interleaved_signal = interleaved_signal.clone();
+			let playing = playing.clone();
 
 			move |quit_signal| {
 				device
@@ -89,6 +93,14 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 
 							let frames = interleaved_signal
 								.with_lock_mut(|m| m.take(output_frames).collect::<Vec<_>>());
+
+							if frames.is_empty() {
+								let mut guard = playing.0.lock().unwrap();
+								if *guard {
+									*guard = false;
+									playing.1.notify_all();
+								}
+							}
 
 							// clean the output as it may contain dirty values from a previous call
 							output.fill(0.);
@@ -118,6 +130,7 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 			sample_rate,
 			interleaved_signal,
 			stream_daemon,
+			playing,
 		}
 	}
 
@@ -132,6 +145,16 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 		}
 	}
 
+	/// # Panics
+	/// - if the mutex guarding the state of the associated thread is poisoned
+	pub fn wait(&self) {
+		let _guard = self
+			.playing
+			.1
+			.wait_while(self.playing.0.lock().unwrap(), |p| *p)
+			.unwrap();
+	}
+
 	pub fn stop(&mut self) {
 		self.stream_daemon.quit(AudioStreamError::Cancelled);
 	}
@@ -142,10 +165,20 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 		&mut self,
 		signal: Signal,
 	) {
+		self.playing.0.with_lock_mut(|p| *p = true);
 		self.interleaved_signal.with_lock_mut(|f| {
 			*f = Box::new(signal)
 				as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>;
 		});
+	}
+
+	/// Note: blocking, `set_signal` is the non-blocking equivalent.
+	pub fn play<Signal: Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync + 'static>(
+		&mut self,
+		signal: Signal,
+	) {
+		self.set_signal(signal);
+		self.wait();
 	}
 
 	#[must_use]

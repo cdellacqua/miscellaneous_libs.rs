@@ -90,4 +90,14 @@ impl StftAnalyzer {
 
 		&self.cur_transform
 	}
+
+	#[must_use]
+	pub fn sample_rate(&self) -> usize {
+		self.sample_rate
+	}
+
+	#[must_use]
+	pub fn samples_per_window(&self) -> usize {
+		self.samples_per_window
+	}
 }
