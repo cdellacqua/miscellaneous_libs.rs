@@ -2,7 +2,7 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
-use std::f32::consts::TAU;
+use std::{f32::consts::TAU, time::Duration};
 
 use crate::{buffers::AudioFrame, AudioStreamBuilderError, AudioStreamSamplingState};
 
@@ -90,21 +90,7 @@ impl<const N_CH: usize> Oscillator<N_CH> {
 		} else {
 			let frequencies = frequencies.to_vec();
 
-			let mut mono = (0..sample_rate)
-				.map(move |i| {
-					frequencies
-						.iter()
-						.map(|f| f32::sin(TAU * f * (i as f32 / sample_rate as f32)))
-						.sum::<f32>()
-				})
-				.collect::<Vec<f32>>();
-
-			let &abs_max = mono
-				.iter()
-				.max_by(|a, b| a.abs().total_cmp(&b.abs()))
-				.unwrap_or(&1.);
-
-			mono.iter_mut().for_each(|s| *s /= abs_max);
+			let mono = frequencies_to_samples(Duration::from_secs(1), &frequencies, sample_rate);
 
 			Box::new(
 				(0..sample_rate)
@@ -151,6 +137,32 @@ impl<const N_CH: usize> Oscillator<N_CH> {
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
 	}
+}
+
+#[must_use]
+pub fn frequencies_to_samples(
+	duration: Duration,
+	frequencies: &[f32],
+	sample_rate: usize,
+) -> Vec<f32> {
+	let mut mono = (0..duration.as_micros() as usize * sample_rate / 1_000_000)
+		.map(move |i| {
+			#[allow(clippy::cast_precision_loss)]
+			frequencies
+				.iter()
+				.map(|f| f32::sin(TAU * f * (i as f32 / sample_rate as f32)))
+				.sum::<f32>()
+		})
+		.collect::<Vec<f32>>();
+
+	let &abs_max = mono
+		.iter()
+		.max_by(|a, b| a.abs().total_cmp(&b.abs()))
+		.unwrap_or(&1.);
+
+	mono.iter_mut().for_each(|s| *s /= abs_max);
+
+	mono
 }
 
 #[cfg(test)]
