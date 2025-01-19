@@ -123,6 +123,7 @@ impl<const N_CH: usize> Oscillator<N_CH> {
 		));
 	}
 
+	#[must_use]
 	pub fn frequencies(&mut self) -> Vec<f32> {
 		self.frequencies.clone()
 	}
@@ -136,6 +137,7 @@ impl<const N_CH: usize> Oscillator<N_CH> {
 		));
 	}
 
+	#[must_use]
 	pub fn mute(&mut self) -> bool {
 		self.mute
 	}

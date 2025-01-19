@@ -6,17 +6,33 @@ use crate::analysis::WindowingFn;
 
 use super::{fft_frequency_bins, filtered_frequency_index_range, index_to_frequency, FftPoint};
 
+#[derive(Clone)]
 pub struct StftAnalyzer {
 	sample_rate: usize,
 	samples_per_window: usize,
-	windowing_fn: Box<dyn WindowingFn + Sync + Send + 'static>,
+	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
 	frequency_indices: RangeInclusive<usize>,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex<f32>>,
 	cur_transform: Vec<FftPoint>,
 }
 
+impl std::fmt::Debug for StftAnalyzer {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("StftAnalyzer")
+			.field("sample_rate", &self.sample_rate)
+			.field("samples_per_window", &self.samples_per_window)
+			.field("windowing_fn", &"omitted")
+			.field("frequency_indices", &self.frequency_indices)
+			.field("fft_processor", &"omitted")
+			.field("complex_signal", &self.complex_signal)
+			.field("cur_transform", &self.cur_transform)
+			.finish()
+	}
+}
+
 impl StftAnalyzer {
+	#[must_use]
 	pub fn new(
 		sample_rate: usize,
 		samples_per_window: usize,
@@ -29,7 +45,7 @@ impl StftAnalyzer {
 		Self {
 			sample_rate,
 			samples_per_window,
-			windowing_fn: Box::new(windowing_fn) as Box<dyn WindowingFn + Send + Sync + 'static>,
+			windowing_fn: Arc::new(windowing_fn) as Arc<dyn WindowingFn + Send + Sync + 'static>,
 
 			frequency_indices: frequency_indices.clone(),
 			fft_processor: planner.plan_fft_forward(samples_per_window),
@@ -60,6 +76,7 @@ impl StftAnalyzer {
 	///
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
+	#[must_use]
 	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint> {
 		let samples = signal.len();
 

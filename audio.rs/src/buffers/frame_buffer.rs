@@ -5,33 +5,38 @@ use std::{
 	ops::{Deref, DerefMut, Index, IndexMut},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct AudioFrame<const N_CH: usize, Samples: Borrow<[f32; N_CH]>>(Samples);
 
 impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> {
 	/// # Panics
 	/// - if the buffer size doesn't correspond to the number of channels.
+	#[must_use]
 	pub fn new(samples: Samples) -> Self {
 		assert_eq!(samples.borrow().len(), N_CH);
-
+		
 		AudioFrame(samples)
 	}
-
+	
+	#[must_use]
 	pub fn copied(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
 		self.cloned()
 	}
-
+	
+	#[must_use]
 	pub fn cloned(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
 		AudioFrame(*self.0.borrow())
 	}
-
+	
+	#[must_use]
 	pub fn to_mono(&self) -> f32 {
 		let samples: &[f32; N_CH] = self.0.borrow();
 		// Values are usually from -1..1 and channels are usually single digit numbers,
 		// the sum shouldn't overflow.
 		samples.iter().sum::<f32>() / (samples.len() as f32)
 	}
-
+	
+	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
 	}

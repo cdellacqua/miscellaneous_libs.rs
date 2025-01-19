@@ -127,6 +127,7 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 		}
 	}
 
+	#[must_use]
 	pub fn take(&mut self) -> InterleavedAudioBuffer<N_CH, Vec<f32>> {
 		InterleavedAudioBuffer::new(
 			self.buffer

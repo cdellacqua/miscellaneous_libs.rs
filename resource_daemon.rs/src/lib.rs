@@ -50,6 +50,7 @@ fn wake_to_quit<QuitReason: Clone + Send + 'static>(
 impl<T, QuitReason: Clone + Send + 'static> ResourceDaemon<T, QuitReason> {
 	// Panic is actually inside the thread
 	#[allow(clippy::missing_panics_doc)]
+	#[must_use]
 	pub fn new<
 		Provider: FnOnce(QuitSignal<QuitReason>) -> Result<T, QuitReason> + Send + 'static,
 	>(

@@ -59,6 +59,7 @@ macro_rules! impl_statistics_for {
 	($t:ty) => {
 		#[allow(clippy::cast_precision_loss)]
 		impl<Series: Borrow<[$t]>> SeriesStatistics<$t, Series> {
+			#[must_use]
 			pub fn mean(&self) -> $t {
 				*self.mean.borrow_mut().get_or_insert_with(|| {
 					let series = self.series.borrow();
@@ -66,6 +67,7 @@ macro_rules! impl_statistics_for {
 				})
 			}
 
+			#[must_use]
 			pub fn max(&self) -> $t {
 				*self.max.borrow_mut().get_or_insert_with(|| {
 					let series = self.series.borrow();
@@ -75,10 +77,12 @@ macro_rules! impl_statistics_for {
 				})
 			}
 
+			#[must_use]
 			pub fn mid_range(&self) -> $t {
 				(self.max() + self.min()) / 2.
 			}
 
+			#[must_use]
 			pub fn min(&self) -> $t {
 				*self.min.borrow_mut().get_or_insert_with(|| {
 					let series = self.series.borrow();
@@ -88,6 +92,7 @@ macro_rules! impl_statistics_for {
 				})
 			}
 
+			#[must_use]
 			pub fn median(&self) -> $t {
 				let series = self.series.borrow();
 				let len = series.len();
@@ -98,6 +103,7 @@ macro_rules! impl_statistics_for {
 				}
 			}
 
+			#[must_use]
 			pub fn variance(&self) -> $t {
 				*self.variance.borrow_mut().get_or_insert_with(|| {
 					let series = self.series.borrow();
@@ -110,6 +116,7 @@ macro_rules! impl_statistics_for {
 				})
 			}
 
+			#[must_use]
 			pub fn std_dev(&self) -> $t {
 				self.variance().sqrt()
 			}
