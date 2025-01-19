@@ -24,6 +24,7 @@ pub struct ResourceDaemon<T, QuitReason: Clone + Send + 'static> {
 // SAFETY: the T is not held by the ResourceDaemon struct but
 // rather by the threat it spawns in the constructor.
 unsafe impl<T, QuitReason: Clone + Send + 'static> Send for ResourceDaemon<T, QuitReason> {}
+unsafe impl<T, QuitReason: Clone + Send + 'static> Sync for ResourceDaemon<T, QuitReason> {}
 
 #[derive(Debug, Clone)]
 pub struct QuitSignal<QuitReason: Clone + Send + 'static>(
