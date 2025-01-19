@@ -89,19 +89,28 @@ impl<const N_CH: usize> Oscillator<N_CH> {
 			)
 		} else {
 			let frequencies = frequencies.to_vec();
-			let wave_magnitude = 1. / frequencies.len().max(1) as f32;
 
-			Box::new((0..sample_rate).cycle().map(move |i| {
-				AudioFrame::new(
-					[frequencies
+			let mut mono = (0..sample_rate)
+				.map(move |i| {
+					frequencies
 						.iter()
-						.map(|f| {
-							f32::sin(TAU * f * (i as f32 / (sample_rate - 1) as f32))
-								* wave_magnitude
-						})
-						.sum::<f32>(); N_CH],
-				)
-			}))
+						.map(|f| f32::sin(TAU * f * (i as f32 / sample_rate as f32)))
+						.sum::<f32>()
+				})
+				.collect::<Vec<f32>>();
+
+			let &abs_max = mono
+				.iter()
+				.max_by(|a, b| a.abs().total_cmp(&b.abs()))
+				.unwrap_or(&1.);
+
+			mono.iter_mut().for_each(|s| *s /= abs_max);
+
+			Box::new(
+				(0..sample_rate)
+					.cycle()
+					.map(move |i| AudioFrame::new([mono[i]; N_CH])),
+			)
 		}
 	}
 
