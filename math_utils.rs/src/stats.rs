@@ -1,7 +1,7 @@
 use crate::even_odd::IsEven;
 use std::{borrow::Borrow, cell::RefCell};
 
-#[derive(Debug, Clone, Copy, thiserror::Error)]
+#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatisticsError {
 	#[error("common stats are undefined on empty series")]
 	EmptySeries,
