@@ -14,20 +14,25 @@ impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> 
 	#[must_use]
 	pub fn new(samples: Samples) -> Self {
 		assert_eq!(samples.borrow().len(), N_CH);
-		
+
 		AudioFrame(samples)
 	}
-	
+
 	#[must_use]
 	pub fn copied(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
 		self.cloned()
 	}
-	
+
+	#[must_use]
+	pub fn samples(&self) -> &[f32; N_CH] {
+		self.0.borrow()
+	}
+
 	#[must_use]
 	pub fn cloned(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
 		AudioFrame(*self.0.borrow())
 	}
-	
+
 	#[must_use]
 	pub fn to_mono(&self) -> f32 {
 		let samples: &[f32; N_CH] = self.0.borrow();
@@ -35,10 +40,17 @@ impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> 
 		// the sum shouldn't overflow.
 		samples.iter().sum::<f32>() / (samples.len() as f32)
 	}
-	
+
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+}
+
+impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> AudioFrame<N_CH, Samples> {
+	#[must_use]
+	pub fn samples_mut(&mut self) -> &mut [f32; N_CH] {
+		self.0.borrow_mut()
 	}
 }
 
