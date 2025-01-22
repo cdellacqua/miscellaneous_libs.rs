@@ -15,6 +15,13 @@ pub fn index_to_frequency(i: usize, sample_rate: usize, samples: usize) -> f32 {
 	return i as f32 * sample_rate as f32 / samples as f32;
 }
 
+#[must_use]
+pub fn frequency_to_index(frequency: f32, sample_rate: usize, samples: usize) -> usize {
+	#[allow(clippy::cast_precision_loss)]
+	#[allow(clippy::cast_sign_loss)]
+	return (frequency / sample_rate as f32 * samples as f32).round() as usize;
+}
+
 pub fn fft_frequency_bins(sample_rate: usize, samples: usize) -> impl Iterator<Item = f32> {
 	(0..fft_real_length(samples)).map(move |i| index_to_frequency(i, sample_rate, samples))
 }
@@ -36,4 +43,37 @@ pub fn filtered_frequency_index_range(
 		.expect("at least one valid frequency in the specified range");
 
 	start..=end
+}
+
+#[cfg(test)]
+mod tests {
+	use super::{frequency_to_index, index_to_frequency};
+
+	#[test]
+	fn frequency_to_index_and_viceversa() {
+		let sample_rate = 44100;
+
+		for samples in 1..=54100 {
+			if samples % 100 == 0 {
+				println!("{samples}");
+			}
+			for i in 0..samples {
+				assert_eq!(
+					i,
+					frequency_to_index(
+						index_to_frequency(i, sample_rate, samples),
+						sample_rate,
+						samples
+					)
+				);
+				assert!(
+					frequency_to_index(
+						index_to_frequency(i, sample_rate, samples),
+						sample_rate,
+						samples
+					) < samples
+				);
+			}
+		}
+	}
 }
