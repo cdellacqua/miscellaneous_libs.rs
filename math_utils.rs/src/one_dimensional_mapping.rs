@@ -34,8 +34,8 @@ macro_rules! impl_map_range_for {
 	($t:ty) => {
 		impl MapRange for $t {
 			fn map(self, in_interval: ($t, $t), out_interval: ($t, $t)) -> $t {
-				(self - in_interval.0) / (in_interval.1 - in_interval.0)
-					* (out_interval.1 - out_interval.0)
+				(self - in_interval.0) * (out_interval.1 - out_interval.0)
+					/ (in_interval.1 - in_interval.0)
 					+ out_interval.0
 			}
 		}
@@ -50,8 +50,8 @@ macro_rules! impl_map_range_clamped_for {
 	($t:ty) => {
 		impl MapRangeClamped for $t {
 			fn map_clamped(self, in_interval: ($t, $t), out_interval: ($t, $t)) -> $t {
-				((self - in_interval.0) / (in_interval.1 - in_interval.0)
-					* (out_interval.1 - out_interval.0)
+				((self - in_interval.0) * (out_interval.1 - out_interval.0)
+					/ (in_interval.1 - in_interval.0)
 					+ out_interval.0)
 					.clamp(
 						<$t>::min(out_interval.0, out_interval.1),
@@ -120,8 +120,8 @@ mod tests {
 	fn test_f32_map() {
 		assert_eq!(0.1.map((0.1, 0.2), (0., 10.)), 0.);
 		assert_eq!(0.2.map((0.1, 0.2), (0., 10.)), 10.);
-		assert_eq!(0.15.map((0.1, 0.2), (0., 10.)), 4.999_999_999_999_999);
-		assert_eq!(0.199.map((0.1, 0.2), (-10., 10.)), 9.8);
+		assert_eq!(0.15.map((0.1, 0.2), (0., 10.)), 4.999_999_999_999_998);
+		assert_eq!(0.199.map((0.1, 0.2), (-10., 10.)), 9.799_999_999_999_997);
 		assert_eq!(0.0.map((-0.1, 0.2), (-10., 10.)), -3.333_333_333_333_334);
 	}
 	#[test]
@@ -142,18 +142,28 @@ mod tests {
 	fn test_f32_map_inverted_out() {
 		assert_eq!(0.1.map((0.1, 0.2), (10., 0.)), 10.);
 		assert_eq!(0.2.map((0.1, 0.2), (10., 0.)), 0.);
-		assert_eq!(0.15.map((0.1, 0.2), (10., 0.)), 5.000_000_000_000_001);
+		assert_eq!(0.15.map((0.1, 0.2), (10., 0.)), 5.000_000_000_000_002);
 	}
 	#[test]
 	fn test_f32_map_inverted_in() {
 		assert_eq!(0.1.map((0.2, 0.1), (0., 10.)), 10.);
 		assert_eq!(0.2.map((0.2, 0.1), (0., 10.)), 0.);
-		assert_eq!(0.15.map((0.2, 0.1), (0., 10.)), 5.000_000_000_000_001);
+		assert_eq!(0.15.map((0.2, 0.1), (0., 10.)), 5.000_000_000_000_002);
 	}
 	#[test]
 	fn test_f32_map_inverted_in_out() {
 		assert_eq!(0.1.map((0.2, 0.1), (10., 0.)), 0.);
 		assert_eq!(0.2.map((0.2, 0.1), (10., 0.)), 10.);
-		assert_eq!(0.15.map((0.2, 0.1), (10., 0.)), 4.999_999_999_999_999);
+		assert_eq!(0.15.map((0.2, 0.1), (10., 0.)), 4.999_999_999_999_998);
+	}
+
+	#[test]
+	fn test_i32_map() {
+		assert_eq!(1.map((1, 2), (0, 10)), 0);
+		assert_eq!(2.map((1, 2), (0, 10)), 10);
+		assert_eq!(15.map((10, 20), (0, 10)), 5);
+		assert_eq!(128.map((0, 255), (-128, 127)), 0);
+		assert_eq!(192.map((0, 255), (-128, 127)), 64);
+		assert_eq!(0.map((-2, 4), (-10, 10)), -4);
 	}
 }
