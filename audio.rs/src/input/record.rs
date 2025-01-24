@@ -14,20 +14,17 @@ use mutex_ext::LockExt;
 
 use crate::{
 	buffers::InterleavedAudioBuffer,
-	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState}, DurationToNOfSamples,
+	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
+	DurationToNOfSamples,
 };
-pub struct AudioRecorderBuilder<const N_CH: usize> {
-	sample_rate: usize,
+pub struct AudioRecorderBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	capacity: Duration,
 }
 
-impl<const N_CH: usize> AudioRecorderBuilder<N_CH> {
+impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new(sample_rate: usize, capacity: Duration) -> Self {
-		Self {
-			sample_rate,
-			capacity,
-		}
+	pub fn new(capacity: Duration) -> Self {
+		Self { capacity }
 	}
 
 	/// Build and start recording the input stream
@@ -37,7 +34,7 @@ impl<const N_CH: usize> AudioRecorderBuilder<N_CH> {
 	///
 	/// # Panics
 	/// - if the input device default configuration doesn't use f32 as the sample format.
-	pub fn build(&self) -> Result<AudioRecorder<N_CH>, AudioStreamBuilderError> {
+	pub fn build(&self) -> Result<AudioRecorder<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
 			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
@@ -49,7 +46,7 @@ impl<const N_CH: usize> AudioRecorderBuilder<N_CH> {
 			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
 			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?
-			.try_with_sample_rate(SampleRate(self.sample_rate as u32))
+			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
 
 		// TODO: normalize everything to f32 and accept any format?
@@ -62,19 +59,16 @@ impl<const N_CH: usize> AudioRecorderBuilder<N_CH> {
 	}
 }
 
-pub struct AudioRecorder<const N_CH: usize> {
-	sample_rate: usize,
+pub struct AudioRecorder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	buffer: Arc<Mutex<Vec<f32>>>,
 	capacity: Duration,
 	capacity_bytes: usize,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
-impl<const N_CH: usize> AudioRecorder<N_CH> {
+impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_CH> {
 	fn new(capacity: Duration, device: Device, config: SupportedStreamConfig) -> Self {
-		let sample_rate = config.sample_rate().0 as usize;
-
-		let samples_per_channel = capacity.to_n_of_samples(sample_rate);
+		let samples_per_channel = capacity.to_n_of_samples(SAMPLE_RATE);
 		let buffer_size = N_CH * samples_per_channel;
 
 		let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(buffer_size)));
@@ -108,7 +102,6 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 		});
 
 		Self {
-			sample_rate,
 			buffer,
 			capacity,
 			capacity_bytes: buffer_size,
@@ -128,7 +121,7 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 	}
 
 	#[must_use]
-	pub fn take(&mut self) -> InterleavedAudioBuffer<N_CH, Vec<f32>> {
+	pub fn take(&mut self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
 		InterleavedAudioBuffer::new(
 			self.buffer
 				.with_lock_mut(|b| replace(b, Vec::with_capacity(self.capacity_bytes))),
@@ -137,7 +130,7 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 
 	/// Get the latest snapshot
 	#[must_use]
-	pub fn latest_snapshot(&self) -> InterleavedAudioBuffer<N_CH, Vec<f32>> {
+	pub fn latest_snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
 		InterleavedAudioBuffer::new(self.buffer.with_lock(Vec::clone))
 	}
 
@@ -148,7 +141,7 @@ impl<const N_CH: usize> AudioRecorder<N_CH> {
 
 	#[must_use]
 	pub fn sample_rate(&self) -> usize {
-		self.sample_rate
+		SAMPLE_RATE
 	}
 
 	#[must_use]

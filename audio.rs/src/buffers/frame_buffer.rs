@@ -36,9 +36,14 @@ impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> 
 	#[must_use]
 	pub fn to_mono(&self) -> f32 {
 		let samples: &[f32; N_CH] = self.0.borrow();
-		// Values are usually from -1..1 and channels are usually single digit numbers,
-		// the sum shouldn't overflow.
-		samples.iter().sum::<f32>() / (samples.len() as f32)
+
+		if N_CH == 1 {
+			samples[0]
+		} else {
+			// Values are usually from -1..1 and channels are usually single digit numbers,
+			// the sum shouldn't overflow.
+			samples.iter().sum::<f32>() / (samples.len() as f32)
+		}
 	}
 
 	#[must_use]

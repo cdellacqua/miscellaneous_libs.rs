@@ -18,14 +18,12 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Default)]
-pub struct AudioPlayerBuilder<const N_CH: usize> {
-	sample_rate: usize,
-}
+pub struct AudioPlayerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {}
 
-impl<const N_CH: usize> AudioPlayerBuilder<N_CH> {
+impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new(sample_rate: usize) -> Self {
-		Self { sample_rate }
+	pub fn new() -> Self {
+		Self {}
 	}
 
 	/// Build and start output stream
@@ -35,7 +33,7 @@ impl<const N_CH: usize> AudioPlayerBuilder<N_CH> {
 	///
 	/// # Panics
 	/// - if the output device default configuration doesn't use f32 as the sample format.
-	pub fn build(&self) -> Result<AudioPlayer<N_CH>, AudioStreamBuilderError> {
+	pub fn build(&self) -> Result<AudioPlayer<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.output_devices()
 			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
@@ -47,7 +45,7 @@ impl<const N_CH: usize> AudioPlayerBuilder<N_CH> {
 			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
 			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?
-			.try_with_sample_rate(SampleRate(self.sample_rate as u32))
+			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
 
 		// TODO: normalize everything to f32 and accept any format?
@@ -60,22 +58,19 @@ impl<const N_CH: usize> AudioPlayerBuilder<N_CH> {
 	}
 }
 
-pub type InterleavedSignalIter<const N_CH: usize> =
+type InterleavedSignalIter<const SAMPLE_RATE: usize, const N_CH: usize> =
 	Arc<Mutex<Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>>>;
 
-pub struct AudioPlayer<const N_CH: usize> {
-	sample_rate: usize,
-	interleaved_signal: InterleavedSignalIter<N_CH>,
+pub struct AudioPlayer<const SAMPLE_RATE: usize, const N_CH: usize> {
+	interleaved_signal: InterleavedSignalIter<SAMPLE_RATE, N_CH>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 	playing: Arc<(Mutex<bool>, Condvar)>,
 }
 
-impl<const N_CH: usize> AudioPlayer<N_CH> {
+impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH> {
 	fn new(device: Device, config: SupportedStreamConfig) -> Self {
 		let interleaved_signal = Arc::new(Mutex::new(Box::new(iter::empty())
 			as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>));
-
-		let sample_rate = config.sample_rate().0 as usize;
 
 		let playing = Arc::new((Mutex::new(false), Condvar::default()));
 
@@ -105,11 +100,12 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 							// clean the output as it may contain dirty values from a previous call
 							output.fill(0.);
 
-							frames.iter().zip(output.chunks_mut(N_CH)).for_each(
-								|(samples, frame)| {
-									frame.copy_from_slice(samples.as_slice());
-								},
-							);
+							frames
+								.iter()
+								.zip(output.chunks_mut(N_CH))
+								.for_each(|(src, dst)| {
+									dst.copy_from_slice(src.samples());
+								});
 						},
 						move |err| {
 							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
@@ -127,7 +123,6 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 		});
 
 		Self {
-			sample_rate,
 			interleaved_signal,
 			stream_daemon,
 			playing,
@@ -183,7 +178,7 @@ impl<const N_CH: usize> AudioPlayer<N_CH> {
 
 	#[must_use]
 	pub fn sample_rate(&self) -> usize {
-		self.sample_rate
+		SAMPLE_RATE
 	}
 
 	#[must_use]

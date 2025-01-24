@@ -16,16 +16,14 @@ use crate::{
 	AudioStreamSamplingState, DurationToNOfSamples,
 };
 
-pub struct InputStreamPollerBuilder<const N_CH: usize> {
-	sample_rate: usize,
+pub struct InputStreamPollerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	buffer_time_duration: Duration,
 }
 
-impl<const N_CH: usize> InputStreamPollerBuilder<N_CH> {
+impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new(sample_rate: usize, buffer_time_duration: Duration) -> Self {
+	pub fn new(buffer_time_duration: Duration) -> Self {
 		Self {
-			sample_rate,
 			buffer_time_duration,
 		}
 	}
@@ -37,7 +35,7 @@ impl<const N_CH: usize> InputStreamPollerBuilder<N_CH> {
 	///
 	/// # Panics
 	/// - if the input device default configuration doesn't use f32 as the sample format.
-	pub fn build(&self) -> Result<InputStreamPoller<N_CH>, AudioStreamBuilderError> {
+	pub fn build(&self) -> Result<InputStreamPoller<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
 		let device = cpal::default_host()
 			.input_devices()
 			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
@@ -49,7 +47,7 @@ impl<const N_CH: usize> InputStreamPollerBuilder<N_CH> {
 			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
 			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?
-			.try_with_sample_rate(SampleRate(self.sample_rate as u32))
+			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
 
 		// TODO: normalize everything to f32 and accept any format?
@@ -66,17 +64,15 @@ impl<const N_CH: usize> InputStreamPollerBuilder<N_CH> {
 	}
 }
 
-pub struct InputStreamPoller<const N_CH: usize> {
-	sample_rate: usize,
+pub struct InputStreamPoller<const SAMPLE_RATE: usize, const N_CH: usize> {
 	ring_buffer: Arc<Mutex<AllocRingBuffer<f32>>>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
+	buffer_time_duration: Duration,
 }
 
-impl<const N_CH: usize> InputStreamPoller<N_CH> {
+impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE, N_CH> {
 	fn new(buffer_time_duration: Duration, device: Device, config: SupportedStreamConfig) -> Self {
-		let sample_rate = config.sample_rate().0 as usize;
-
-		let samples_per_channel = buffer_time_duration.to_n_of_samples(sample_rate);
+		let samples_per_channel = buffer_time_duration.to_n_of_samples(SAMPLE_RATE);
 		let buffer_size = N_CH * samples_per_channel;
 
 		let ring_buffer = Arc::new(Mutex::new({
@@ -114,9 +110,9 @@ impl<const N_CH: usize> InputStreamPoller<N_CH> {
 		});
 
 		Self {
-			sample_rate,
 			ring_buffer,
 			stream_daemon,
+			buffer_time_duration,
 		}
 	}
 
@@ -133,13 +129,18 @@ impl<const N_CH: usize> InputStreamPoller<N_CH> {
 
 	/// Get the latest snapshot
 	#[must_use]
-	pub fn latest_snapshot(&self) -> InterleavedAudioBuffer<N_CH, Vec<f32>> {
+	pub fn latest_snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
 		InterleavedAudioBuffer::new(self.ring_buffer.with_lock(RingBuffer::to_vec))
 	}
 
 	#[must_use]
+	pub fn snapshot_duration(&self) -> Duration {
+		self.buffer_time_duration
+	}
+
+	#[must_use]
 	pub fn sample_rate(&self) -> usize {
-		self.sample_rate
+		SAMPLE_RATE
 	}
 
 	#[must_use]
