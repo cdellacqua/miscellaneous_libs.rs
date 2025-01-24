@@ -49,6 +49,15 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	}
 
 	#[must_use]
+	pub fn concat(&self, other: &Self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
+		InterleavedAudioBuffer::new({
+			let mut base = self.raw_buffer.borrow().to_vec();
+			base.extend(other.raw_buffer.borrow());
+			base
+		})
+	}
+
+	#[must_use]
 	pub fn iter(&self) -> InterleavedAudioBufferIter<SAMPLE_RATE, N_CH, Buffer> {
 		InterleavedAudioBufferIter::new(self)
 	}
