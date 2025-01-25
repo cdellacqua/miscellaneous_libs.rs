@@ -102,13 +102,13 @@ macro_rules! impl_map_ratio_clamped_for {
 	};
 }
 
-impl_map_range_for!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize, f32, f64);
+impl_map_range_for!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize, f32, f64);
 impl_map_range_clamped_for!(
-	u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize, f32, f64
+	u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize, f32, f64
 );
-impl_map_ratio_for!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize, f32, f64);
+impl_map_ratio_for!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize, f32, f64);
 impl_map_ratio_clamped_for!(
-	u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize, f32, f64
+	u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize, f32, f64
 );
 
 #[cfg(test)]

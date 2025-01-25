@@ -33,7 +33,7 @@ macro_rules! impl_is_even_is_odd_for {
 	};
 }
 
-impl_is_even_is_odd_for!(u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, usize, isize);
+impl_is_even_is_odd_for!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize);
 
 #[cfg(test)]
 mod tests {
