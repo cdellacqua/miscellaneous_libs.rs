@@ -2,11 +2,11 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
-use std::{f32::consts::TAU, iter, time::Duration};
+use std::{f32::consts::TAU, iter};
 
 use crate::{
 	buffers::{AudioFrame, InterleavedAudioBuffer},
-	AudioStreamBuilderError, AudioStreamSamplingState,
+	AudioStreamBuilderError, AudioStreamSamplingState, NOfSamples,
 };
 
 use super::playback::{AudioPlayer, AudioPlayerBuilder};
@@ -84,7 +84,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 		} else {
 			let frequencies = frequencies.to_vec();
 
-			let mono = frequencies_to_samples::<SAMPLE_RATE>(Duration::from_secs(1), &frequencies);
+			let mono =
+				frequencies_to_samples::<SAMPLE_RATE>(NOfSamples::new(SAMPLE_RATE), &frequencies);
 
 			Box::new(
 				mono.into_iter()
@@ -129,10 +130,10 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 
 #[must_use]
 pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
-	duration: Duration,
+	samples: NOfSamples<SAMPLE_RATE>,
 	frequencies: &[f32],
 ) -> InterleavedAudioBuffer<SAMPLE_RATE, 1, Vec<f32>> {
-	let mut mono = (0..duration.as_micros() as usize * SAMPLE_RATE / 1_000_000)
+	let mut mono = (0..*samples)
 		.map(move |i| {
 			#[allow(clippy::cast_precision_loss)]
 			frequencies

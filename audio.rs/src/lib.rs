@@ -12,5 +12,5 @@ pub mod output;
 mod common;
 pub use common::*;
 
-mod discrete_conversions;
-pub use discrete_conversions::*;
+mod n_of_samples;
+pub use n_of_samples::*;

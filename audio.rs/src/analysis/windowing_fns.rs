@@ -13,21 +13,21 @@ pub struct IdentityWindow;
 
 impl HannWindow {
 	#[must_use]
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self
 	}
 }
 
 impl RectangleWindow {
 	#[must_use]
-	pub fn new(rect_width: usize) -> Self {
+	pub const fn new(rect_width: usize) -> Self {
 		Self { rect_width }
 	}
 }
 
 impl IdentityWindow {
 	#[must_use]
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self
 	}
 }

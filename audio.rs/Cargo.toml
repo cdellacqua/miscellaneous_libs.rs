@@ -19,6 +19,7 @@ rustfft = "6.2.0"
 cpal = { git = "https://github.com/cdellacqua/cpal.rs.git", rev = "ed62b1b85dccebe9f228c8a537886472c1e3157e" }
 mutex_ext = { path = "../mutex_ext.rs" }
 resource_daemon = { path = "../resource_daemon.rs" }
+math_utils = { path = "../math_utils.rs" }
 thiserror = "2.0.9"
 ringbuffer = "0.15.0"
 derive_more = { version = "1.0.0", features = ["deref", "deref_mut"] }

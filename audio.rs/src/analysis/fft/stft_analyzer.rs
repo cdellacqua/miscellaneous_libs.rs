@@ -2,57 +2,55 @@ use std::{ops::RangeInclusive, sync::Arc};
 
 use rustfft::{num_complex::Complex, Fft, FftPlanner};
 
-use crate::analysis::{fft::FftBinPoint, WindowingFn};
+use crate::{analysis::{fft::FftBinPoint, WindowingFn}, NOfSamples};
 
 use super::{fft_frequency_bins, filtered_frequency_index_range, FftPoint};
 
 #[derive(Clone)]
-pub struct StftAnalyzer {
-	sample_rate: usize,
-	samples_per_window: usize,
+pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
 	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
 	frequency_indices: RangeInclusive<usize>,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex<f32>>,
-	cur_transform_bins: Vec<FftBinPoint>,
-	cur_transform: Vec<FftPoint>,
+	cur_transform_bins: Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
+	cur_transform: Vec<FftPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 }
 
-impl std::fmt::Debug for StftAnalyzer {
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
+	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+{
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("StftAnalyzer")
-			.field("sample_rate", &self.sample_rate)
-			.field("samples_per_window", &self.samples_per_window)
-			.field("windowing_fn", &"omitted")
-			.field("frequency_indices", &self.frequency_indices)
-			.field("fft_processor", &"omitted")
-			.field("complex_signal", &self.complex_signal)
-			.field("cur_transform_bins", &self.cur_transform_bins)
-			.field("cur_transform", &self.cur_transform)
-			.finish()
+		f.debug_struct(&format!(
+			"StftAnalyzer<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
+		))
+		.field("windowing_fn", &"omitted")
+		.field("frequency_indices", &self.frequency_indices)
+		.field("fft_processor", &"omitted")
+		.field("complex_signal", &self.complex_signal)
+		.field("cur_transform_bins", &self.cur_transform_bins)
+		.field("cur_transform", &self.cur_transform)
+		.finish()
 	}
 }
 
-impl StftAnalyzer {
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
+	StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+{
 	#[must_use]
 	pub fn new(
-		sample_rate: usize,
-		samples_per_window: usize,
 		frequency_range: (f32, f32),
 		windowing_fn: impl WindowingFn + Send + Sync + 'static,
 	) -> Self {
 		let mut planner = FftPlanner::new();
 		let frequency_indices =
-			filtered_frequency_index_range(sample_rate, samples_per_window, frequency_range);
+			filtered_frequency_index_range(NOfSamples::<SAMPLE_RATE>::new(SAMPLES_PER_WINDOW), frequency_range);
 		let transform_size = frequency_indices.clone().count();
 		Self {
-			sample_rate,
-			samples_per_window,
 			windowing_fn: Arc::new(windowing_fn) as Arc<dyn WindowingFn + Send + Sync + 'static>,
 
 			frequency_indices: frequency_indices.clone(),
-			fft_processor: planner.plan_fft_forward(samples_per_window),
-			complex_signal: vec![Complex { re: 0., im: 0. }; samples_per_window],
+			fft_processor: planner.plan_fft_forward(SAMPLES_PER_WINDOW),
+			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
 			cur_transform_bins: vec![
 				FftBinPoint {
 					magnitude: 0.,
@@ -72,7 +70,7 @@ impl StftAnalyzer {
 
 	#[must_use]
 	pub fn frequency_bins(&self) -> Vec<f32> {
-		fft_frequency_bins(self.sample_rate, self.samples_per_window)
+		fft_frequency_bins(NOfSamples::<SAMPLE_RATE>::new(SAMPLES_PER_WINDOW))
 			.skip(*self.frequency_indices.start())
 			.take(self.frequency_indices.clone().count())
 			.collect()
@@ -87,17 +85,17 @@ impl StftAnalyzer {
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze_bins(&mut self, signal: &[f32]) -> &Vec<FftBinPoint> {
+	pub fn analyze_bins(&mut self, signal: &[f32]) -> &Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
 		let samples = signal.len();
 
 		assert_eq!(
-			samples, self.samples_per_window,
+			samples, SAMPLES_PER_WINDOW,
 			"signal with incompatible length received"
 		);
 
 		for (i, c) in self.complex_signal.iter_mut().enumerate() {
 			*c = Complex::new(
-				signal[i] * (self.windowing_fn).ratio_at(i, self.samples_per_window),
+				signal[i] * (self.windowing_fn).ratio_at(i, SAMPLES_PER_WINDOW),
 				0.0,
 			);
 		}
@@ -127,23 +125,27 @@ impl StftAnalyzer {
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint> {
+	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint<SAMPLE_RATE,SAMPLES_PER_WINDOW>> {
 		// update cur_transform_bins
 		let _bin_transform = self.analyze_bins(signal);
 
-		for (dst, src) in self.cur_transform.iter_mut().zip(self.cur_transform_bins.iter()) {
-			*dst = src.to_fft_point(self.sample_rate, self.samples_per_window);
+		for (dst, src) in self
+			.cur_transform
+			.iter_mut()
+			.zip(self.cur_transform_bins.iter())
+		{
+			*dst = src.to_fft_point();
 		}
 		&self.cur_transform
 	}
 
 	#[must_use]
 	pub fn sample_rate(&self) -> usize {
-		self.sample_rate
+		SAMPLE_RATE
 	}
 
 	#[must_use]
 	pub fn samples_per_window(&self) -> usize {
-		self.samples_per_window
+		SAMPLES_PER_WINDOW
 	}
 }

@@ -1,7 +1,4 @@
-use std::{
-	sync::{Arc, Mutex},
-	time::Duration,
-};
+use std::sync::{Arc, Mutex};
 
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -13,19 +10,17 @@ use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
 	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState, DurationToNOfSamples,
+	AudioStreamSamplingState, NOfSamples,
 };
 
 pub struct InputStreamPollerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	buffer_time_duration: Duration,
+	n_of_samples: NOfSamples<SAMPLE_RATE>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new(buffer_time_duration: Duration) -> Self {
-		Self {
-			buffer_time_duration,
-		}
+	pub const fn new(n_of_samples: NOfSamples<SAMPLE_RATE>) -> Self {
+		Self { n_of_samples }
 	}
 
 	/// Build and start recording the input stream
@@ -56,24 +51,23 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 			"expected F32 input stream"
 		);
 
-		Ok(InputStreamPoller::new(
-			self.buffer_time_duration,
-			device,
-			config,
-		))
+		Ok(InputStreamPoller::new(self.n_of_samples, device, config))
 	}
 }
 
 pub struct InputStreamPoller<const SAMPLE_RATE: usize, const N_CH: usize> {
 	ring_buffer: Arc<Mutex<AllocRingBuffer<f32>>>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
-	buffer_time_duration: Duration,
+	n_of_samples: NOfSamples<SAMPLE_RATE>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE, N_CH> {
-	fn new(buffer_time_duration: Duration, device: Device, config: SupportedStreamConfig) -> Self {
-		let samples_per_channel = buffer_time_duration.to_n_of_samples(SAMPLE_RATE);
-		let buffer_size = N_CH * samples_per_channel;
+	fn new(
+		n_of_samples: NOfSamples<SAMPLE_RATE>,
+		device: Device,
+		config: SupportedStreamConfig,
+	) -> Self {
+		let buffer_size = N_CH * *n_of_samples;
 
 		let ring_buffer = Arc::new(Mutex::new({
 			let mut buf = AllocRingBuffer::new(buffer_size);
@@ -112,7 +106,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		Self {
 			ring_buffer,
 			stream_daemon,
-			buffer_time_duration,
+			n_of_samples,
 		}
 	}
 
@@ -133,9 +127,10 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		InterleavedAudioBuffer::new(self.ring_buffer.with_lock(RingBuffer::to_vec))
 	}
 
+	/// Number of sampling points, regardless of the number of channels.
 	#[must_use]
-	pub fn snapshot_duration(&self) -> Duration {
-		self.buffer_time_duration
+	pub fn n_of_samples(&self) -> NOfSamples<SAMPLE_RATE> {
+		self.n_of_samples
 	}
 
 	#[must_use]

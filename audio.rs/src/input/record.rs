@@ -1,7 +1,6 @@
 use std::{
 	mem::replace,
 	sync::{Arc, Mutex},
-	time::Duration,
 };
 
 use cpal::{
@@ -15,15 +14,15 @@ use mutex_ext::LockExt;
 use crate::{
 	buffers::InterleavedAudioBuffer,
 	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
-	DurationToNOfSamples,
+	NOfSamples,
 };
 pub struct AudioRecorderBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	capacity: Duration,
+	capacity: NOfSamples<SAMPLE_RATE>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new(capacity: Duration) -> Self {
+	pub const fn new(capacity: NOfSamples<SAMPLE_RATE>) -> Self {
 		Self { capacity }
 	}
 
@@ -61,15 +60,18 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RA
 
 pub struct AudioRecorder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	buffer: Arc<Mutex<Vec<f32>>>,
-	capacity: Duration,
+	capacity: NOfSamples<SAMPLE_RATE>,
 	capacity_bytes: usize,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_CH> {
-	fn new(capacity: Duration, device: Device, config: SupportedStreamConfig) -> Self {
-		let samples_per_channel = capacity.to_n_of_samples(SAMPLE_RATE);
-		let buffer_size = N_CH * samples_per_channel;
+	fn new(
+		capacity: NOfSamples<SAMPLE_RATE>,
+		device: Device,
+		config: SupportedStreamConfig,
+	) -> Self {
+		let buffer_size = N_CH * *capacity;
 
 		let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(buffer_size)));
 
@@ -135,7 +137,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 	}
 
 	#[must_use]
-	pub fn capacity(&self) -> Duration {
+	pub fn capacity(&self) -> NOfSamples<SAMPLE_RATE> {
 		self.capacity
 	}
 

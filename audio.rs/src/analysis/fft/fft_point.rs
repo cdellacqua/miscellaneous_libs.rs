@@ -1,43 +1,45 @@
+use crate::NOfSamples;
+
 use super::{frequency_to_index, index_to_frequency};
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct FftPoint {
+pub struct FftPoint<const SAMPLE_RATE: usize, const SAMPLES: usize> {
 	pub magnitude: f32,
 	pub frequency: f32,
 }
 
-impl FftPoint {
+impl<const SAMPLE_RATE: usize, const SAMPLES: usize> FftPoint<SAMPLE_RATE, SAMPLES> {
 	#[must_use]
-	pub fn frequency_idx(&self, sample_rate: usize, samples: usize) -> usize {
-		frequency_to_index(self.frequency, sample_rate, samples)
+	pub const fn frequency_idx(&self) -> usize {
+		frequency_to_index(self.frequency, NOfSamples::<SAMPLE_RATE>::new(SAMPLES))
 	}
 
 	#[must_use]
-	pub fn to_fft_bin_point(&self, sample_rate: usize, samples: usize) -> FftBinPoint {
+	pub const fn to_fft_bin_point(&self) -> FftBinPoint<SAMPLE_RATE, SAMPLES> {
 		FftBinPoint {
 			magnitude: self.magnitude,
-			frequency_idx: self.frequency_idx(sample_rate, samples),
+			frequency_idx: self.frequency_idx(),
 		}
 	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct FftBinPoint {
+pub struct FftBinPoint<const SAMPLE_RATE: usize, const SAMPLES: usize> {
 	pub magnitude: f32,
 	pub frequency_idx: usize,
 }
 
-impl FftBinPoint {
+impl<const SAMPLE_RATE: usize, const SAMPLES: usize> FftBinPoint<SAMPLE_RATE, SAMPLES> {
 	#[must_use]
-	pub fn frequency(&self, sample_rate: usize, samples: usize) -> f32 {
-		index_to_frequency(self.frequency_idx, sample_rate, samples)
+	pub const fn frequency(&self) -> f32 {
+		index_to_frequency(self.frequency_idx, NOfSamples::<SAMPLE_RATE>::new(SAMPLES))
 	}
 
 	#[must_use]
-	pub fn to_fft_point(&self, sample_rate: usize, samples: usize) -> FftPoint {
+	pub const fn to_fft_point(&self) -> FftPoint<SAMPLE_RATE, SAMPLES> {
 		FftPoint {
 			magnitude: self.magnitude,
-			frequency: self.frequency(sample_rate, samples),
+			frequency: self.frequency(),
 		}
 	}
 }

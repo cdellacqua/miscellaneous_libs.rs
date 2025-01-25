@@ -22,7 +22,7 @@ pub struct AudioPlayerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {}
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new() -> Self {
+	pub const fn new() -> Self {
 		Self {}
 	}
 

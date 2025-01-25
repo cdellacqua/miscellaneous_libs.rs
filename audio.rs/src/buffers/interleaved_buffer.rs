@@ -1,9 +1,6 @@
-use std::{
-	borrow::{Borrow, BorrowMut},
-	time::Duration,
-};
+use std::borrow::{Borrow, BorrowMut};
 
-use crate::NOfSamplesToDuration;
+use crate::NOfSamples;
 
 use super::{
 	frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut,
@@ -72,21 +69,16 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 		(N_CH, self.raw_buffer)
 	}
 
-	/// The number of frames corresponds to the number of sampling points in time, regardless of the number
+	/// The number of samples corresponds to the number of sampling points in time, regardless of the number
 	/// of channels.
 	#[must_use]
-	pub fn n_of_frames(&self) -> usize {
-		self.raw_buffer.borrow().len() / N_CH
+	pub fn n_of_samples(&self) -> NOfSamples<SAMPLE_RATE> {
+		NOfSamples::new(self.raw_buffer.borrow().len() / N_CH)
 	}
 
 	#[must_use]
 	pub fn sample_rate(&self) -> usize {
 		SAMPLE_RATE
-	}
-
-	#[must_use]
-	pub fn duration(&self) -> Duration {
-		self.n_of_frames().to_duration(SAMPLE_RATE)
 	}
 
 	/// Converts this interleaved collection to a raw buffer containing the samples of a mono track.
@@ -123,7 +115,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	/// - if the index is out of bound.
 	#[must_use]
 	pub fn at_mut(&mut self, index: usize) -> AudioFrame<N_CH, &mut [f32; N_CH]> {
-		assert!(index < self.n_of_frames());
+		assert!(index < *self.n_of_samples());
 
 		// SAFETY:
 		// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
@@ -176,7 +168,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>> IntoIte
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH]>> FromIterator<AudioFrame<N_CH, FrameBuffer>>
+impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH]>>
+	FromIterator<AudioFrame<N_CH, FrameBuffer>>
 	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>
 {
 	fn from_iter<T: IntoIterator<Item = AudioFrame<N_CH, FrameBuffer>>>(iter: T) -> Self {
@@ -188,8 +181,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH]>> Extend<AudioFrame<N_CH, FrameBuffer>>
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>
+impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH]>>
+	Extend<AudioFrame<N_CH, FrameBuffer>> for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>
 {
 	fn extend<T: IntoIterator<Item = AudioFrame<N_CH, FrameBuffer>>>(&mut self, iter: T) {
 		self.raw_buffer.extend(
@@ -242,6 +235,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, A: Borrow<[f32]>, B: Borrow<[f
 
 #[cfg(test)]
 mod tests {
+	use std::time::Duration;
+
 	use super::*;
 
 	#[test]
@@ -279,6 +274,9 @@ mod tests {
 	#[test]
 	fn test_duration() {
 		let snapshot = InterleavedAudioBuffer::<44100, 1, _>::new(vec![0.; 4410]);
-		assert_eq!(snapshot.duration(), Duration::from_millis(100));
+		assert_eq!(
+			snapshot.n_of_samples().to_duration(),
+			Duration::from_millis(100)
+		);
 	}
 }
