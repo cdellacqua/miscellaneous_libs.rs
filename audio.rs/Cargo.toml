@@ -22,7 +22,7 @@ resource_daemon = { path = "../resource_daemon.rs" }
 math_utils = { path = "../math_utils.rs" }
 thiserror = "2.0.9"
 ringbuffer = "0.15.0"
-derive_more = { version = "1.0.0", features = ["deref", "deref_mut"] }
+derive_more = { version = "1.0.0", features = ["add", "add_assign", "deref", "deref_mut", "mul", "mul_assign"] }
 delegate = "0.13.2"
 # arrayref = "0.3.9"
 # itertools = "0.14.0"
