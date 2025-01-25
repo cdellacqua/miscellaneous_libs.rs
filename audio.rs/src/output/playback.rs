@@ -3,6 +3,8 @@
 use std::{
 	iter,
 	sync::{Arc, Condvar, Mutex},
+	thread::sleep,
+	time::Duration,
 };
 
 use cpal::{
@@ -61,10 +63,16 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 type InterleavedSignalIter<const SAMPLE_RATE: usize, const N_CH: usize> =
 	Arc<Mutex<Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>>>;
 
+#[derive(Debug, Clone, Copy, Default)]
+struct PlayingState {
+	is_playing: bool,
+	last_frame_delay: Option<Duration>,
+}
+
 pub struct AudioPlayer<const SAMPLE_RATE: usize, const N_CH: usize> {
 	interleaved_signal: InterleavedSignalIter<SAMPLE_RATE, N_CH>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
-	playing: Arc<(Mutex<bool>, Condvar)>,
+	playing: Arc<(Mutex<PlayingState>, Condvar)>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH> {
@@ -72,7 +80,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 		let interleaved_signal = Arc::new(Mutex::new(Box::new(iter::empty())
 			as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>));
 
-		let playing = Arc::new((Mutex::new(false), Condvar::default()));
+		let playing = Arc::new((Mutex::new(PlayingState::default()), Condvar::default()));
 
 		let stream_daemon = ResourceDaemon::new({
 			let interleaved_signal = interleaved_signal.clone();
@@ -82,7 +90,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 				device
 					.build_output_stream(
 						&config.into(),
-						move |output: &mut [f32], _| {
+						move |output: &mut [f32], info| {
 							let output_frames = output.len() / N_CH;
 							assert_eq!(output.len() % N_CH, 0);
 
@@ -91,8 +99,14 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 
 							if frames.is_empty() {
 								let mut guard = playing.0.lock().unwrap();
-								if *guard {
-									*guard = false;
+								if guard.is_playing {
+									*guard = PlayingState {
+										is_playing: false,
+										last_frame_delay: info
+											.timestamp()
+											.playback
+											.duration_since(&info.timestamp().callback),
+									};
 									playing.1.notify_all();
 								}
 							}
@@ -140,14 +154,21 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 		}
 	}
 
+	/// Note: the wait time is based on when the iterator is exhausted and an estimate on when the output
+	/// device should play the last samples.
 	/// # Panics
 	/// - if the mutex guarding the state of the associated thread is poisoned
 	pub fn wait(&self) {
-		let _guard = self
+		let guard = self
 			.playing
 			.1
-			.wait_while(self.playing.0.lock().unwrap(), |p| *p)
+			.wait_while(self.playing.0.lock().unwrap(), |p| p.is_playing)
 			.unwrap();
+		let last_frame_delay = guard.last_frame_delay;
+		drop(guard);
+		if let Some(last_frame_delay) = last_frame_delay {
+			sleep(last_frame_delay);
+		}
 	}
 
 	pub fn stop(&mut self) {
@@ -160,7 +181,12 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 		&mut self,
 		signal: Signal,
 	) {
-		self.playing.0.with_lock_mut(|p| *p = true);
+		self.playing.0.with_lock_mut(|p| {
+			*p = PlayingState {
+				is_playing: true,
+				last_frame_delay: None,
+			}
+		});
 		self.interleaved_signal.with_lock_mut(|f| {
 			*f = Box::new(signal)
 				as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>;
@@ -168,6 +194,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	}
 
 	/// Note: blocking, `set_signal` is the non-blocking equivalent.
+	/// Note: the wait time is based on when the iterator is exhausted and an estimate on when the output
+	/// device should play the last samples.
 	pub fn play<Signal: Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync + 'static>(
 		&mut self,
 		signal: Signal,
