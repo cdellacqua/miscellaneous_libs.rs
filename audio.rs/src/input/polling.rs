@@ -1,9 +1,13 @@
-use std::sync::{Arc, Mutex};
+use std::{
+	sync::{Arc, Mutex},
+	time::Duration,
+};
 
 use cpal::{
 	traits::{DeviceTrait, HostTrait, StreamTrait},
 	Device, SampleFormat, SampleRate, Stream, SupportedStreamConfig,
 };
+use math_utils::moving_avg::MovingAverage;
 use mutex_ext::LockExt;
 use resource_daemon::ResourceDaemon;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
@@ -55,8 +59,14 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 	}
 }
 
+struct PollerState<const SAMPLE_RATE: usize> {
+	buffer: AllocRingBuffer<f32>,
+	collected_samples: NOfSamples<SAMPLE_RATE>,
+	input_delay_moving_avg: MovingAverage<Duration>,
+}
+
 pub struct InputStreamPoller<const SAMPLE_RATE: usize, const N_CH: usize> {
-	ring_buffer: Arc<Mutex<AllocRingBuffer<f32>>>,
+	shared: Arc<Mutex<PollerState<SAMPLE_RATE>>>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 	n_of_samples: NOfSamples<SAMPLE_RATE>,
 }
@@ -67,26 +77,50 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		device: Device,
 		config: SupportedStreamConfig,
 	) -> Self {
-		let buffer_size = N_CH * *n_of_samples;
-
-		let ring_buffer = Arc::new(Mutex::new({
-			let mut buf = AllocRingBuffer::new(buffer_size);
-			buf.fill(0.);
-			buf
+		let shared = Arc::new(Mutex::new({
+			PollerState {
+				buffer: {
+					let mut buf = AllocRingBuffer::new(N_CH * *n_of_samples);
+					buf.fill(0.);
+					buf
+				},
+				collected_samples: n_of_samples, // buffer pre-filled with 0.
+				input_delay_moving_avg: MovingAverage::new(10),
+			}
 		}));
 
 		let stream_daemon = ResourceDaemon::new({
-			let ring_buffer = ring_buffer.clone();
+			let shared = shared.clone();
 			move |quit_signal| {
 				device
 					.build_input_stream(
 						&config.into(),
-						move |data, _| {
-							ring_buffer.with_lock_mut(|b| {
-								for &v in data {
-									b.push(v);
-								}
-							});
+						move |data, info| {
+							let output_buffer_frames =
+								NOfSamples::<SAMPLE_RATE>::new(data.len() / N_CH);
+
+							shared.with_lock_mut(
+								|PollerState {
+								     buffer,
+								     ref mut collected_samples,
+								     ref mut input_delay_moving_avg,
+								 }| {
+									for &v in data {
+										buffer.push(v);
+									}
+
+									// assert_eq!(data.len() % N_CH, 0);
+									*collected_samples += output_buffer_frames;
+
+									input_delay_moving_avg.push(
+										info.timestamp()
+											.callback
+											.duration_since(&info.timestamp().capture)
+											.unwrap_or(Duration::ZERO) + output_buffer_frames
+											.to_duration(),
+									);
+								},
+							);
 						},
 						move |err| {
 							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
@@ -104,7 +138,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		});
 
 		Self {
-			ring_buffer,
+			shared,
 			stream_daemon,
 			n_of_samples,
 		}
@@ -121,10 +155,78 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		}
 	}
 
-	/// Get the latest snapshot
+	/// Get the latest snapshot of the internal buffer
 	#[must_use]
-	pub fn latest_snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		InterleavedAudioBuffer::new(self.ring_buffer.with_lock(RingBuffer::to_vec))
+	pub fn snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
+		InterleavedAudioBuffer::new(self.shared.with_lock(|shared| shared.buffer.to_vec()))
+	}
+
+	/// Extract the last N samples from the internal buffer
+	#[must_use]
+	pub fn last_n_samples(
+		&self,
+		samples_to_extract: NOfSamples<SAMPLE_RATE>,
+	) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
+		self.samples_from_ref(samples_to_extract, None).0
+	}
+
+	/// Extract N samples from the internal buffer, starting from
+	/// the specified `previously_collected_samples`. You can
+	/// use this method to precisely concatenate signal snapshots
+	/// together.
+	///
+	/// When passing `None` as `previously_collected_samples`, this
+	/// method behaves like [`Self::last_n_samples`].
+	///
+	/// Note: if between the two snapshots the buffer has already been
+	/// overwritten, the returned signal begins from the oldest
+	/// available sample.
+	///
+	/// Example (pseudocode):
+	/// ```rust ignore
+	/// let (beginning, collected_samples) = poller.samples_from_ref(NOfSamples::new(10), None);
+	/// sleep(Duration::from_millis(100)); // assuming poller buffer is big enough to contain ~100ms of samples
+	/// let (end, _) = poller.samples_from_ref(NOfSamples::new(10), Some(collected_samples));
+	/// assert!(poller.snapshot().has_slice(beginning.concat(end)))
+	/// ```
+	#[must_use]
+	pub fn samples_from_ref(
+		&self,
+		samples_to_extract: NOfSamples<SAMPLE_RATE>,
+		previously_collected_samples: Option<NOfSamples<SAMPLE_RATE>>,
+	) -> (
+		InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
+		NOfSamples<SAMPLE_RATE>,
+	) {
+		self.shared.with_lock(
+			|&PollerState {
+			     ref buffer,
+			     collected_samples,
+			     ..
+			 }| {
+				(
+					InterleavedAudioBuffer::new({
+						let skip = previously_collected_samples.map_or(
+							self.n_of_samples - samples_to_extract.min(self.n_of_samples),
+							|p| {
+								if collected_samples - p >= self.n_of_samples {
+									0.into()
+								} else {
+									self.n_of_samples - (collected_samples - p)
+								}
+							},
+						);
+						buffer
+							.iter()
+							.skip(skip.num())
+							.take(samples_to_extract.num())
+							.copied()
+							.collect::<Vec<_>>()
+					}),
+					collected_samples,
+				)
+			},
+		)
 	}
 
 	/// Number of sampling points, regardless of the number of channels.
@@ -141,5 +243,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+
+	#[must_use]
+	pub fn avg_input_delay(&self) -> Duration {
+		self.shared
+			.with_lock(|shared| shared.input_delay_moving_avg.avg())
 	}
 }
