@@ -551,6 +551,7 @@ dependencies = [
 name = "math_utils"
 version = "0.1.0"
 dependencies = [
+ "ringbuffer",
  "thiserror 2.0.11",
 ]
 
