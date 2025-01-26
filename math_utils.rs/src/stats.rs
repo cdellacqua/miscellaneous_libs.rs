@@ -1,5 +1,10 @@
-use crate::even_odd::IsEven;
-use std::{borrow::Borrow, cell::RefCell};
+use crate::{even_odd::IsEven, ext::DivisibleByUsize};
+use std::{
+	borrow::Borrow,
+	cell::RefCell,
+	cmp::Ordering,
+	ops::{Add, Mul, Sub},
+};
 
 #[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StatisticsError {
@@ -10,126 +15,140 @@ pub enum StatisticsError {
 #[derive(Debug, Clone)]
 pub struct SeriesStatistics<T, Series: Borrow<[T]>> {
 	series: Series,
+	sum: RefCell<Option<T>>,
 	mean: RefCell<Option<T>>,
 	variance: RefCell<Option<T>>,
 	max: RefCell<Option<T>>,
 	min: RefCell<Option<T>>,
 }
-
-// Two distinct new methods because of the lack of overloading,
-// although there probably is a cleaner way
-
-impl<Series: Borrow<[f32]>> SeriesStatistics<f32, Series> {
+impl<T, Series: Borrow<[T]>> SeriesStatistics<T, Series> {
 	/// # Errors
 	/// - on empty series
-	pub fn new_f32(series: Series) -> Result<Self, StatisticsError> {
+	pub fn new(series: Series) -> Result<Self, StatisticsError> {
 		if series.borrow().is_empty() {
 			Err(StatisticsError::EmptySeries)
 		} else {
 			Ok(Self {
 				series,
+				sum: RefCell::default(),
 				mean: RefCell::default(),
 				variance: RefCell::default(),
 				max: RefCell::default(),
 				min: RefCell::default(),
 			})
 		}
+	}
+}
+
+impl<T: Add<T, Output = T> + Copy, Series: Borrow<[T]>> SeriesStatistics<T, Series> {
+	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by explicit check at the beginning of the function
+	#[must_use]
+	pub fn sum(&self) -> T {
+		*self.sum.borrow_mut().get_or_insert_with(|| {
+			let series = self.series.borrow();
+			series
+				.iter()
+				.copied()
+				.reduce(|acc, cur| acc + cur)
+				.expect("internal error: at least one element should be present in the series")
+		})
+	}
+}
+
+impl<T: Add<T, Output = T> + DivisibleByUsize + Copy, Series: Borrow<[T]>>
+	SeriesStatistics<T, Series>
+{
+	#[must_use]
+	pub fn mean(&self) -> T {
+		let sum = self.sum();
+		*self.mean.borrow_mut().get_or_insert_with(|| {
+			let series = self.series.borrow();
+			sum.div(series.len())
+		})
+	}
+}
+
+impl<T: PartialOrd + Copy, Series: Borrow<[T]>> SeriesStatistics<T, Series> {
+	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by explicit check at the beginning of the function
+	#[must_use]
+	pub fn max(&self) -> T {
+		*self.max.borrow_mut().get_or_insert_with(|| {
+			let series = self.series.borrow();
+			*series
+				.iter()
+				.max_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+				.expect("internal error: at least one element should be present in the series")
+		})
+	}
+
+	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by explicit check at the beginning of the function
+	#[must_use]
+	pub fn min(&self) -> T {
+		*self.min.borrow_mut().get_or_insert_with(|| {
+			let series = self.series.borrow();
+			*series
+				.iter()
+				.min_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal))
+				.expect("internal error: at least one element should be present in the series")
+		})
+	}
+}
+
+impl<T: PartialOrd + Add<T, Output = T> + DivisibleByUsize + Copy, Series: Borrow<[T]>>
+	SeriesStatistics<T, Series>
+{
+	#[must_use]
+	pub fn mid_range(&self) -> T {
+		(self.max() + self.min()).div(2)
+	}
+
+	#[must_use]
+	pub fn median(&self) -> T {
+		let series = self.series.borrow();
+		let len = series.len();
+		if len.is_even() {
+			(series[len / 2 - 1] + series[len / 2]).div(2)
+		} else {
+			series[len / 2]
+		}
+	}
+}
+
+impl<
+		T: Add<T, Output = T> + Sub<T, Output = T> + DivisibleByUsize + Mul<T, Output = T> + Copy,
+		Series: Borrow<[T]>,
+	> SeriesStatistics<T, Series>
+{
+	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by explicit check at the beginning of the function
+	#[must_use]
+	pub fn variance(&self) -> T {
+		*self.variance.borrow_mut().get_or_insert_with(|| {
+			let series = self.series.borrow();
+			self.series
+				.borrow()
+				.iter()
+				.map(|v| {
+					let diff = self.mean() - *v;
+					diff * diff
+				})
+				.reduce(|acc, cur| acc + cur)
+				.expect("internal error: at least one element should be present in the series")
+				.div(series.len())
+		})
+	}
+}
+
+impl<Series: Borrow<[f32]>> SeriesStatistics<f32, Series> {
+	pub fn std_dev(&self) -> f32 {
+		self.variance().sqrt()
 	}
 }
 
 impl<Series: Borrow<[f64]>> SeriesStatistics<f64, Series> {
-	/// # Errors
-	/// - on empty series
-	pub fn new_f64(series: Series) -> Result<Self, StatisticsError> {
-		if series.borrow().is_empty() {
-			Err(StatisticsError::EmptySeries)
-		} else {
-			Ok(Self {
-				series,
-				mean: RefCell::default(),
-				variance: RefCell::default(),
-				max: RefCell::default(),
-				min: RefCell::default(),
-			})
-		}
+	pub fn std_dev(&self) -> f64 {
+		self.variance().sqrt()
 	}
 }
-
-macro_rules! impl_statistics_for {
-	($t:ty) => {
-		#[allow(clippy::cast_precision_loss)]
-		impl<Series: Borrow<[$t]>> SeriesStatistics<$t, Series> {
-			#[must_use]
-			pub fn mean(&self) -> $t {
-				*self.mean.borrow_mut().get_or_insert_with(|| {
-					let series = self.series.borrow();
-					series.iter().sum::<$t>() / (series.len() as $t)
-				})
-			}
-
-			#[must_use]
-			pub fn max(&self) -> $t {
-				*self.max.borrow_mut().get_or_insert_with(|| {
-					let series = self.series.borrow();
-					*series.iter().max_by(|a, b| {
-						a.total_cmp(b)
-					}).unwrap()
-				})
-			}
-
-			#[must_use]
-			pub fn mid_range(&self) -> $t {
-				(self.max() + self.min()) / 2.
-			}
-
-			#[must_use]
-			pub fn min(&self) -> $t {
-				*self.min.borrow_mut().get_or_insert_with(|| {
-					let series = self.series.borrow();
-					*series.iter().min_by(|a, b| {
-						a.total_cmp(b)
-					}).unwrap()
-				})
-			}
-
-			#[must_use]
-			pub fn median(&self) -> $t {
-				let series = self.series.borrow();
-				let len = series.len();
-				if len.is_even() {
-					(series[len / 2 - 1] + series[len / 2]) / (2. as $t)
-				} else {
-					series[len / 2]
-				}
-			}
-
-			#[must_use]
-			pub fn variance(&self) -> $t {
-				*self.variance.borrow_mut().get_or_insert_with(|| {
-					let series = self.series.borrow();
-					self.series
-						.borrow()
-						.iter()
-						.map(|v| (self.mean() - v).powi(2))
-						.sum::<$t>()
-						/ (series.len() as $t)
-				})
-			}
-
-			#[must_use]
-			pub fn std_dev(&self) -> $t {
-				self.variance().sqrt()
-			}
-		}
-
-	};
-	($t:ty, $($others:ty),+) => {
-		impl_statistics_for!($t);
-		impl_statistics_for!($($others),+);
-	};
-}
-
-impl_statistics_for!(f32, f64);
 
 #[cfg(test)]
 mod tests {
@@ -138,42 +157,43 @@ mod tests {
 	#[test]
 	fn test_standard_deviation() {
 		let values: &[f32] = &[2., 4., 4., 4., 5., 5., 7., 9.];
-		let stats = SeriesStatistics::new_f32(values).unwrap();
+		let stats = SeriesStatistics::new(values).unwrap();
+		assert!((stats.variance().sqrt() - 2.).abs() < f32::EPSILON);
 		assert!((stats.std_dev() - 2.).abs() < f32::EPSILON);
 	}
 
 	#[test]
 	fn test_mean() {
 		let values: &[f64] = &[1., 3., 3., 6., 7., 8., 9.];
-		let stats = SeriesStatistics::new_f64(values).unwrap();
+		let stats = SeriesStatistics::new(values).unwrap();
 		assert!((stats.mean() - 5.28).abs() < 0.01);
 	}
 
 	#[test]
 	fn test_median() {
 		let values: &[f64] = &[1., 3., 3., 6., 7., 8., 9.];
-		let stats = SeriesStatistics::new_f64(values).unwrap();
+		let stats = SeriesStatistics::new(values).unwrap();
 		assert!((stats.median() - 6.).abs() < f64::EPSILON);
 	}
 
 	#[test]
 	fn test_median_even_series() {
 		let values: &[f64] = &[1., 2., 3., 4., 5., 6., 8., 9.];
-		let stats = SeriesStatistics::new_f64(values).unwrap();
+		let stats = SeriesStatistics::new(values).unwrap();
 		assert!((stats.median() - 4.5).abs() < f64::EPSILON);
 	}
 
 	#[test]
 	fn test_min() {
 		let values: &[f64] = &[1., 2., 3., 4., 5., 6., 8., 9.];
-		let stats = SeriesStatistics::new_f64(values).unwrap();
+		let stats = SeriesStatistics::new(values).unwrap();
 		assert!((stats.min() - 1.).abs() < f64::EPSILON);
 	}
 
 	#[test]
 	fn test_max() {
 		let values: &[f64] = &[1., 2., 3., 4., 5., 6., 8., 9.];
-		let stats = SeriesStatistics::new_f64(values).unwrap();
+		let stats = SeriesStatistics::new(values).unwrap();
 		assert!((stats.max() - 9.).abs() < f64::EPSILON);
 	}
 }
