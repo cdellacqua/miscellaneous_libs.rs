@@ -19,7 +19,7 @@ fn bench_fft_impls(c: &mut Criterion) {
 	// 	});
 	// });
 
-	let mut analyzer = StftAnalyzer::<44_100, 10>::new((0., 20_000.), HannWindow);
+	let mut analyzer = StftAnalyzer::<44_100, 10>::new(HannWindow);
 	group.bench_function(BenchmarkId::new("Optimized allocations", "sample"), |b| {
 		b.iter(|| {
 			black_box(analyzer.analyze(&sample));

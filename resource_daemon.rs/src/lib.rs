@@ -27,9 +27,7 @@ unsafe impl<T, QuitReason: Clone + Send + 'static> Send for ResourceDaemon<T, Qu
 unsafe impl<T, QuitReason: Clone + Send + 'static> Sync for ResourceDaemon<T, QuitReason> {}
 
 #[derive(Debug, Clone)]
-pub struct QuitSignal<QuitReason>(
-	Arc<(Mutex<DaemonState<QuitReason>>, Condvar)>,
-);
+pub struct QuitSignal<QuitReason>(Arc<(Mutex<DaemonState<QuitReason>>, Condvar)>);
 
 impl<QuitReason: Clone + Send + 'static> QuitSignal<QuitReason> {
 	pub fn dispatch(&self, reason: QuitReason) {

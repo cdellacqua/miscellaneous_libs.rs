@@ -1,15 +1,17 @@
-use std::{ops::RangeInclusive, sync::Arc};
+use std::sync::Arc;
 
 use rustfft::{num_complex::Complex, Fft, FftPlanner};
 
-use crate::{analysis::{fft::FftBinPoint, WindowingFn}, NOfSamples};
+use crate::{
+	analysis::{fft::FftBinPoint, windowing_fns::HannWindow, WindowingFn},
+	NOfSamples,
+};
 
-use super::{fft_frequency_bins, filtered_frequency_index_range, FftPoint};
+use super::{fft_frequency_bins, fft_real_length, FftPoint};
 
 #[derive(Clone)]
 pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
 	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
-	frequency_indices: RangeInclusive<usize>,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex<f32>>,
 	cur_transform_bins: Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
@@ -24,7 +26,6 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
 			"StftAnalyzer<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
 		))
 		.field("windowing_fn", &"omitted")
-		.field("frequency_indices", &self.frequency_indices)
 		.field("fft_processor", &"omitted")
 		.field("complex_signal", &self.complex_signal)
 		.field("cur_transform_bins", &self.cur_transform_bins)
@@ -37,18 +38,12 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	#[must_use]
-	pub fn new(
-		frequency_range: (f32, f32),
-		windowing_fn: impl WindowingFn + Send + Sync + 'static,
-	) -> Self {
+	pub fn new(windowing_fn: impl WindowingFn + Send + Sync + 'static) -> Self {
 		let mut planner = FftPlanner::new();
-		let frequency_indices =
-			filtered_frequency_index_range(NOfSamples::<SAMPLE_RATE>::new(SAMPLES_PER_WINDOW), frequency_range);
-		let transform_size = frequency_indices.clone().count();
+		let transform_size = fft_real_length(*NOfSamples::<SAMPLE_RATE>::new(SAMPLES_PER_WINDOW));
 		Self {
 			windowing_fn: Arc::new(windowing_fn) as Arc<dyn WindowingFn + Send + Sync + 'static>,
 
-			frequency_indices: frequency_indices.clone(),
 			fft_processor: planner.plan_fft_forward(SAMPLES_PER_WINDOW),
 			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
 			cur_transform_bins: vec![
@@ -70,10 +65,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 
 	#[must_use]
 	pub fn frequency_bins(&self) -> Vec<f32> {
-		fft_frequency_bins(NOfSamples::<SAMPLE_RATE>::new(SAMPLES_PER_WINDOW))
-			.skip(*self.frequency_indices.start())
-			.take(self.frequency_indices.clone().count())
-			.collect()
+		fft_frequency_bins(NOfSamples::<SAMPLE_RATE>::new(SAMPLES_PER_WINDOW)).collect()
 	}
 
 	/// Analyze a signal in the domain of time, sampled at the configured sample rate.
@@ -85,7 +77,10 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze_bins(&mut self, signal: &[f32]) -> &Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
+	pub fn analyze_bins(
+		&mut self,
+		signal: &[f32],
+	) -> &Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
 		let samples = signal.len();
 
 		assert_eq!(
@@ -106,12 +101,16 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 		#[allow(clippy::cast_precision_loss)]
 		let normalization_factor = 1.0 / (samples as f32).sqrt();
 
-		for (transform_i, complex_i) in self.frequency_indices.clone().enumerate() {
-			self.cur_transform_bins[transform_i] = FftBinPoint {
-				frequency_idx: complex_i,
-				magnitude: (self.complex_signal[complex_i] * normalization_factor).norm(),
-			}
-		}
+		self.cur_transform_bins
+			.iter_mut()
+			.zip(self.complex_signal.iter())
+			.enumerate()
+			.for_each(|(i, (dst, src))| {
+				*dst = FftBinPoint {
+					frequency_idx: i,
+					magnitude: (src * normalization_factor).norm(),
+				};
+			});
 
 		&self.cur_transform_bins
 	}
@@ -125,17 +124,17 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint<SAMPLE_RATE,SAMPLES_PER_WINDOW>> {
+	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<FftPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
 		// update cur_transform_bins
 		let _bin_transform = self.analyze_bins(signal);
 
-		for (dst, src) in self
-			.cur_transform
+		self.cur_transform
 			.iter_mut()
 			.zip(self.cur_transform_bins.iter())
-		{
-			*dst = src.to_fft_point();
-		}
+			.for_each(|(dst, src)| {
+				*dst = src.to_fft_point();
+			});
+
 		&self.cur_transform
 	}
 
@@ -147,5 +146,13 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	#[must_use]
 	pub fn samples_per_window(&self) -> usize {
 		SAMPLES_PER_WINDOW
+	}
+}
+
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
+	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+{
+	fn default() -> Self {
+		Self::new(HannWindow)
 	}
 }
