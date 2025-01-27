@@ -108,6 +108,28 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	}
 }
 
+impl<const SAMPLE_RATE: usize, Buffer: Borrow<[f32]>>
+	InterleavedAudioBuffer<SAMPLE_RATE, 1, Buffer>
+{
+	/// Same as `raw_buffer` but clearer in the intent and guaranteed
+	/// to exist only when `N_CH` equals 1
+	#[must_use]
+	pub fn as_mono(&self) -> &[f32] {
+		self.raw_buffer.borrow()
+	}
+}
+
+impl<const SAMPLE_RATE: usize, Buffer: BorrowMut<[f32]>>
+	InterleavedAudioBuffer<SAMPLE_RATE, 1, Buffer>
+{
+	/// Same as `raw_buffer_mut` but clearer in the intent and guaranteed
+	/// to exist only when `N_CH` equals 1
+	#[must_use]
+	pub fn as_mono_mut(&mut self) -> &mut [f32] {
+		self.raw_buffer.borrow_mut()
+	}
+}
+
 impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
 {
