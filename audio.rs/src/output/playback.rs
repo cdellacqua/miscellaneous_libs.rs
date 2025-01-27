@@ -188,8 +188,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 			}
 		});
 		self.interleaved_signal.with_lock_mut(|f| {
-			*f = Box::new(signal)
-				as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>;
+			*f = Box::new(signal) as _;
 		});
 	}
 
