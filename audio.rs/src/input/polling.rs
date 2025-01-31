@@ -1,6 +1,6 @@
 use std::{
 	sync::{Arc, Mutex},
-	time::Duration,
+	time::{Duration},
 };
 
 use cpal::{
@@ -162,16 +162,18 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 	}
 
 	/// Extract the last N samples from the internal buffer
+	#[allow(clippy::missing_panics_doc)] // REASON: the code path when passing None always returns a Some(...)
 	#[must_use]
 	pub fn last_n_samples(
 		&self,
 		samples_to_extract: NOfSamples<SAMPLE_RATE>,
 	) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		self.samples_from_ref(samples_to_extract, None).0
+		self.samples_from_ref(samples_to_extract, None).unwrap().0
 	}
 
-	/// Extract N samples from the internal buffer, starting from
-	/// the specified `previously_collected_samples`. You can
+	/// Extract N samples or less (depending on availability) from the
+	/// internal buffer, starting from the specified
+	/// `previously_collected_samples`. You can
 	/// use this method to precisely concatenate signal snapshots
 	/// together.
 	///
@@ -179,8 +181,10 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 	/// method behaves like [`Self::last_n_samples`].
 	///
 	/// Note: if between the two snapshots the buffer has already been
-	/// overwritten, the returned signal begins from the oldest
-	/// available sample.
+	/// overwritten, None is returned.
+	///
+	/// # Panics
+	/// - if the mutex guarding the internal data is poisoned.
 	///
 	/// Example (pseudocode):
 	/// ```rust ignore
@@ -194,39 +198,31 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		&self,
 		samples_to_extract: NOfSamples<SAMPLE_RATE>,
 		previously_collected_samples: Option<NOfSamples<SAMPLE_RATE>>,
-	) -> (
+	) -> Option<(
 		InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
 		NOfSamples<SAMPLE_RATE>,
-	) {
-		self.shared.with_lock(
-			|&PollerState {
-			     ref buffer,
-			     collected_samples,
-			     ..
-			 }| {
-				(
-					InterleavedAudioBuffer::new({
-						let skip = previously_collected_samples.map_or(
-							self.n_of_samples - samples_to_extract.min(self.n_of_samples),
-							|p| {
-								if collected_samples - p >= self.n_of_samples {
-									0.into()
-								} else {
-									self.n_of_samples - (collected_samples - p)
-								}
-							},
-						);
-						buffer
-							.iter()
-							.skip(skip.num())
-							.take(samples_to_extract.num())
-							.copied()
-							.collect::<Vec<_>>()
-					}),
-					collected_samples,
-				)
-			},
-		)
+	)> {
+		let shared = self.shared.lock().unwrap();
+		let collected_samples = shared.collected_samples;
+
+		let skip = match previously_collected_samples {
+			Some(prev) if collected_samples - prev >= self.n_of_samples => None,
+			Some(prev) => Some(self.n_of_samples - (collected_samples - prev)),
+			None => Some(self.n_of_samples - samples_to_extract.min(self.n_of_samples)),
+		};
+
+		skip.map(|skip| {
+			(
+				InterleavedAudioBuffer::new({
+					{
+						let mut out = vec![0.; shared.buffer.len() - *skip];
+						shared.buffer.copy_to_slice(*skip, &mut out);
+						out
+					}
+				}),
+				collected_samples,
+			)
+		})
 	}
 
 	/// Number of sampling points, regardless of the number of channels.
