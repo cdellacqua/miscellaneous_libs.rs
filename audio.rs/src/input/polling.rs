@@ -1,6 +1,6 @@
 use std::{
 	sync::{Arc, Mutex},
-	time::{Duration},
+	time::Duration,
 };
 
 use cpal::{
@@ -106,7 +106,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 								     ref mut input_delay_moving_avg,
 								 }| {
 									for &v in data {
-										buffer.push(v);
+										let _ = buffer.enqueue(v);
 									}
 
 									// assert_eq!(data.len() % N_CH, 0);
