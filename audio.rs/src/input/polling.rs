@@ -214,11 +214,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		skip.map(|skip| {
 			(
 				InterleavedAudioBuffer::new({
-					{
-						let mut out = vec![0.; shared.buffer.len() - *skip];
+					let mut out = vec![0.; shared.buffer.len() - *skip];
+					if !out.is_empty() {
 						shared.buffer.copy_to_slice(*skip, &mut out);
-						out
 					}
+					out
 				}),
 				collected_samples,
 			)
