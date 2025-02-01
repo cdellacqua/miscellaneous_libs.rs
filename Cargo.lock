@@ -57,7 +57,7 @@ dependencies = [
  "mutex_ext",
  "rand",
  "resource_daemon",
- "ringbuffer 0.15.0 (git+https://github.com/cdellacqua/ringbuffer.rs.git?rev=70832ae18daad75a317c7854311562e8c0014f2b)",
+ "ringbuffer 0.15.0",
  "rustfft",
  "thiserror 2.0.11",
 ]
@@ -256,7 +256,7 @@ dependencies = [
 [[package]]
 name = "cpal"
 version = "0.15.3"
-source = "git+https://github.com/cdellacqua/cpal.rs.git?rev=ed62b1b85dccebe9f228c8a537886472c1e3157e#ed62b1b85dccebe9f228c8a537886472c1e3157e"
+source = "git+https://github.com/cdellacqua/cpal.rs.git?rev=4a8c9b8ea6566b1fcca1bf7b816464c3151e7230#4a8c9b8ea6566b1fcca1bf7b816464c3151e7230"
 dependencies = [
  "alsa",
  "core-foundation-sys",
@@ -869,13 +869,12 @@ version = "0.1.0"
 [[package]]
 name = "ringbuffer"
 version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3df6368f71f205ff9c33c076d170dd56ebf68e8161c733c0caa07a7a5509ed53"
 
 [[package]]
 name = "ringbuffer"
 version = "0.15.0"
-source = "git+https://github.com/cdellacqua/ringbuffer.rs.git?rev=70832ae18daad75a317c7854311562e8c0014f2b#70832ae18daad75a317c7854311562e8c0014f2b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3df6368f71f205ff9c33c076d170dd56ebf68e8161c733c0caa07a7a5509ed53"
 
 [[package]]
 name = "rustc-hash"
