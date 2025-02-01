@@ -25,3 +25,36 @@ impl DivisibleByUsize for Duration {
 		self / rhs as u32
 	}
 }
+
+pub trait Average {
+	#[must_use]
+	fn avg(self, rhs: Self) -> Self;
+}
+
+impl Average for f32 {
+	fn avg(self, rhs: Self) -> Self {
+		(self + rhs) / 2.
+	}
+}
+
+impl Average for f64 {
+	fn avg(self, rhs: Self) -> Self {
+		(self + rhs) / 2.
+	}
+}
+
+macro_rules! impl_avg_for_integer {
+	($t:ty) => {
+		impl Average for $t {
+			fn avg(self, rhs: Self) -> Self {
+				(self + rhs) / 2
+			}
+		}
+	};
+	($t:ty, $($others:ty),+) => {
+		impl_avg_for_integer!($t);
+		impl_avg_for_integer!($($others),+);
+	};
+}
+
+impl_avg_for_integer!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize);
