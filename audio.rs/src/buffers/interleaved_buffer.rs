@@ -98,8 +98,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	}
 
 	#[must_use]
-	pub fn raw_buffer(&self) -> &[f32] {
-		self.raw_buffer.borrow()
+	pub fn raw_buffer(&self) -> &Buffer {
+		&self.raw_buffer
 	}
 
 	#[must_use]
@@ -155,8 +155,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	}
 
 	#[must_use]
-	pub fn raw_buffer_mut(&mut self) -> &mut [f32] {
-		self.raw_buffer.borrow_mut()
+	pub fn raw_buffer_mut(&mut self) -> &mut Buffer {
+		&mut self.raw_buffer
 	}
 }
 
