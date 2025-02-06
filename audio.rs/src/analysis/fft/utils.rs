@@ -17,7 +17,7 @@ pub const fn index_to_frequency<const SAMPLE_RATE: usize>(
 	samples: NOfSamples<SAMPLE_RATE>,
 ) -> f32 {
 	#[allow(clippy::cast_precision_loss)]
-	return i as f32 * samples.sample_rate() as f32 / samples.num() as f32;
+	return i as f32 * samples.sample_rate() as f32 / samples.inner() as f32;
 }
 
 #[must_use]
@@ -27,13 +27,13 @@ pub const fn frequency_to_index<const SAMPLE_RATE: usize>(
 ) -> usize {
 	#[allow(clippy::cast_precision_loss)]
 	#[allow(clippy::cast_sign_loss)]
-	return round_f32_to_usize(frequency / samples.sample_rate() as f32 * samples.num() as f32);
+	return round_f32_to_usize(frequency / samples.sample_rate() as f32 * samples.inner() as f32);
 }
 
 pub fn fft_frequency_bins<const SAMPLE_RATE: usize>(
 	samples: NOfSamples<SAMPLE_RATE>,
 ) -> impl Iterator<Item = f32> {
-	(0..fft_real_length(samples.num())).map(move |i| index_to_frequency(i, samples))
+	(0..fft_real_length(*samples)).map(move |i| index_to_frequency(i, samples))
 }
 
 #[cfg(test)]
@@ -47,7 +47,7 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 
 		for samples in 1..=54100 {
-			if samples % 100 == 0 {
+			if samples % 1000 == 0 {
 				println!("{samples}");
 			}
 			for i in 0..samples {

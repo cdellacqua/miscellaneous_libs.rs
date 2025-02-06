@@ -54,7 +54,7 @@ impl<const SAMPLE_RATE: usize> NOfSamples<SAMPLE_RATE> {
 	}
 
 	#[must_use]
-	pub const fn num(&self) -> usize {
+	pub const fn inner(&self) -> usize {
 		self.0
 	}
 
