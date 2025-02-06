@@ -1,8 +1,10 @@
 #![allow(clippy::cast_precision_loss)]
 
 use std::{
-	iter,
-	sync::{Arc, Condvar, Mutex},
+	sync::{
+		mpsc::{sync_channel, SyncSender, TryRecvError},
+		Arc, Condvar, Mutex,
+	},
 	thread::sleep,
 	time::Duration,
 };
@@ -16,7 +18,8 @@ use resource_daemon::ResourceDaemon;
 use mutex_ext::LockExt;
 
 use crate::{
-	buffers::AudioFrame, AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
+	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamError,
+	AudioStreamSamplingState, NOfSamples,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -60,9 +63,6 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 	}
 }
 
-type InterleavedSignalIter<const SAMPLE_RATE: usize, const N_CH: usize> =
-	Arc<Mutex<Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>>>;
-
 #[derive(Debug, Clone, Copy, Default)]
 struct PlayingState {
 	is_playing: bool,
@@ -70,56 +70,69 @@ struct PlayingState {
 }
 
 pub struct AudioPlayer<const SAMPLE_RATE: usize, const N_CH: usize> {
-	interleaved_signal: InterleavedSignalIter<SAMPLE_RATE, N_CH>,
+	signal_tx: SyncSender<InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>>,
 	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 	playing: Arc<(Mutex<PlayingState>, Condvar)>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH> {
 	fn new(device: Device, config: SupportedStreamConfig) -> Self {
-		let interleaved_signal = Arc::new(Mutex::new(Box::new(iter::empty())
-			as Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync>));
+		let (signal_tx, signal_rx) =
+			sync_channel::<InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>>(0);
 
 		let playing = Arc::new((Mutex::new(PlayingState::default()), Condvar::default()));
 
 		let stream_daemon = ResourceDaemon::new({
-			let interleaved_signal = interleaved_signal.clone();
 			let playing = playing.clone();
+
+			let mut currently_playing = None;
 
 			move |quit_signal| {
 				device
 					.build_output_stream(
 						&config.into(),
-						move |output: &mut [f32], info| {
-							let output_frames = output.len() / N_CH;
-							assert_eq!(output.len() % N_CH, 0);
+						move |output: &mut [f32], info| match &mut currently_playing {
+							None => match signal_rx.try_recv() {
+								Err(TryRecvError::Disconnected) => {
+									panic!("internal error: broken channel")
+								}
+								Err(TryRecvError::Empty) => (),
+								Ok(new_signal) => {
+									currently_playing = Some((NOfSamples::new(0), new_signal));
+								}
+							},
+							Some((frame_idx, signal)) => {
+								if *frame_idx >= signal.n_of_samples() {
+									output.fill(0.);
+									
+									currently_playing = None;
+									let mut guard = playing.0.lock().unwrap();
+									if guard.is_playing {
+										*guard = PlayingState {
+											is_playing: false,
+											last_frame_delay: info
+												.timestamp()
+												.playback
+												.duration_since(&info.timestamp().callback),
+										};
+										playing.1.notify_all();
+									}
+								} else {
+									let output_frames = NOfSamples::new(output.len() / N_CH);
+									debug_assert_eq!(output.len() % N_CH, 0);
 
-							let frames = interleaved_signal
-								.with_lock_mut(|m| m.take(output_frames).collect::<Vec<_>>());
+									let clamped_frames =
+										output_frames.min(signal.n_of_samples() - *frame_idx);
 
-							if frames.is_empty() {
-								let mut guard = playing.0.lock().unwrap();
-								if guard.is_playing {
-									*guard = PlayingState {
-										is_playing: false,
-										last_frame_delay: info
-											.timestamp()
-											.playback
-											.duration_since(&info.timestamp().callback),
-									};
-									playing.1.notify_all();
+									output[..*clamped_frames].copy_from_slice(
+										&signal.raw_buffer()[**frame_idx * N_CH
+											..(**frame_idx + *clamped_frames) * N_CH],
+									);
+									output[*clamped_frames..].fill(0.);
+
+									*frame_idx += clamped_frames;
 								}
 							}
-
-							// clean the output as it may contain dirty values from a previous call
-							output.fill(0.);
-
-							frames
-								.iter()
-								.zip(output.chunks_mut(N_CH))
-								.for_each(|(src, dst)| {
-									dst.copy_from_slice(src.samples());
-								});
 						},
 						move |err| {
 							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
@@ -137,7 +150,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 		});
 
 		Self {
-			interleaved_signal,
+			signal_tx,
 			stream_daemon,
 			playing,
 		}
@@ -171,34 +184,24 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 		}
 	}
 
-	pub fn stop(&mut self) {
-		self.stream_daemon.quit(AudioStreamError::Cancelled);
-	}
-
-	pub fn set_signal<
-		Signal: Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync + 'static,
-	>(
-		&mut self,
-		signal: Signal,
-	) {
+	/// # Panics
+	/// - if the mutex guarding the internal state is poisoned.
+	pub fn set_signal(&mut self, signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>) {
 		self.playing.0.with_lock_mut(|p| {
 			*p = PlayingState {
 				is_playing: true,
 				last_frame_delay: None,
 			}
 		});
-		self.interleaved_signal.with_lock_mut(|f| {
-			*f = Box::new(signal) as _;
-		});
+		self.signal_tx
+			.send(signal)
+			.expect("internal error: broken channel");
 	}
 
 	/// Note: blocking, `set_signal` is the non-blocking equivalent.
 	/// Note: the wait time is based on when the iterator is exhausted and an estimate on when the output
 	/// device should play the last samples.
-	pub fn play<Signal: Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync + 'static>(
-		&mut self,
-		signal: Signal,
-	) {
+	pub fn play(&mut self, signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>) {
 		self.set_signal(signal);
 		self.wait();
 	}

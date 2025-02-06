@@ -2,21 +2,27 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_sign_loss)]
 
-use std::{f32::consts::TAU, iter};
-
-use crate::{
-	buffers::{AudioFrame, InterleavedAudioBuffer},
-	AudioStreamBuilderError, AudioStreamSamplingState, NOfSamples,
+use std::{
+	f32::consts::TAU,
+	sync::{Arc, RwLock},
 };
 
-use super::playback::{AudioPlayer, AudioPlayerBuilder};
+use cpal::{
+	traits::{DeviceTrait, HostTrait, StreamTrait},
+	Device, SampleFormat, SampleRate, Stream, SupportedStreamConfig,
+};
+use resource_daemon::ResourceDaemon;
+
+use crate::{
+	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamError,
+	AudioStreamSamplingState, NOfSamples,
+};
 
 /* TODO: support different set of frequencies per channel? */
 #[derive(Debug, Clone)]
 pub struct OscillatorBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	frequencies: Vec<f32>,
 	mute: bool,
-	player_builder: AudioPlayerBuilder<SAMPLE_RATE, N_CH>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> Default for OscillatorBuilder<SAMPLE_RATE, N_CH> {
@@ -31,7 +37,6 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 		Self {
 			frequencies: frequencies.to_vec(),
 			mute,
-			player_builder: AudioPlayerBuilder::new(),
 		}
 	}
 
@@ -43,78 +48,150 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 	/// # Panics
 	/// - if the output device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<Oscillator<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let player = self.player_builder.build()?;
+		let device = cpal::default_host()
+			.output_devices()
+			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
+			.next()
+			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
 
-		Ok(Oscillator::new(player, self.frequencies.clone(), self.mute))
+		let config = device
+			.supported_input_configs()
+			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
+			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
+			.ok_or(AudioStreamBuilderError::NoConfigFound)?
+			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
+			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
+
+		// TODO: normalize everything to f32 and accept any format?
+		assert!(
+			matches!(config.sample_format(), cpal::SampleFormat::F32),
+			"expected F32 input stream"
+		);
+
+		Ok(Oscillator::new(
+			device,
+			config,
+			self.frequencies.clone(),
+			self.mute,
+		))
 	}
 }
 
-pub struct Oscillator<const SAMPLE_RATE: usize, const N_CH: usize> {
+struct OscillatorShared<const SAMPLE_RATE: usize, const N_CH: usize> {
+	signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
 	frequencies: Vec<f32>,
 	mute: bool,
-	player: AudioPlayer<SAMPLE_RATE, N_CH>,
+}
+
+pub struct Oscillator<const SAMPLE_RATE: usize, const N_CH: usize> {
+	shared: Arc<RwLock<OscillatorShared<SAMPLE_RATE, N_CH>>>,
+	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> {
-	fn new(mut player: AudioPlayer<SAMPLE_RATE, N_CH>, frequencies: Vec<f32>, mute: bool) -> Self {
-		let signal = Self::generate_signal(&frequencies, mute);
-		player.set_signal(signal);
+	fn new(
+		device: Device,
+		config: SupportedStreamConfig,
+		frequencies: Vec<f32>,
+		mute: bool,
+	) -> Self {
+		let shared: Arc<RwLock<OscillatorShared<SAMPLE_RATE, N_CH>>> =
+			Arc::new(RwLock::new(OscillatorShared {
+				signal: frequencies_to_samples(SAMPLE_RATE.into(), &frequencies).multiply(),
+				frequencies,
+				mute,
+			}));
+
+		let stream_daemon = ResourceDaemon::new({
+			let shared = shared.clone();
+			let mut sample_idx = 0;
+
+			move |quit_signal| {
+				device
+					.build_output_stream(
+						&config.into(),
+						move |output: &mut [f32], _| {
+							let shared = shared.read().unwrap();
+							if shared.mute {
+								output.fill(0.);
+							} else {
+								debug_assert_eq!(output.len() % N_CH, 0);
+
+								let signal = &shared.signal;
+
+								let mut output_idx = 0;
+								while output_idx < output.len() {
+									let sample_idx_mod = sample_idx % signal.raw_buffer().len();
+									let available = (output.len() - output_idx)
+										.min(signal.raw_buffer().len() - sample_idx_mod);
+
+									output[output_idx..output_idx + available].copy_from_slice(
+										&signal.raw_buffer()
+											[sample_idx_mod..sample_idx_mod + available],
+									);
+									output_idx += available;
+									sample_idx += available;
+								}
+							}
+						},
+						move |err| {
+							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
+						},
+						None,
+					)
+					.map_err(|err| AudioStreamError::BuildFailed(err.to_string()))
+					.and_then(|stream| {
+						stream
+							.play()
+							.map(|()| stream)
+							.map_err(|err| AudioStreamError::StartFailed(err.to_string()))
+					})
+			}
+		});
+
 		Self {
-			frequencies,
-			mute,
-			player,
+			shared,
+			stream_daemon,
 		}
 	}
 
 	#[must_use]
 	pub fn state(&self) -> AudioStreamSamplingState {
-		self.player.state()
-	}
-
-	pub fn stop(&mut self) {
-		self.player.stop();
-	}
-
-	fn generate_signal(
-		frequencies: &[f32],
-		mute: bool,
-	) -> Box<dyn Iterator<Item = AudioFrame<N_CH, [f32; N_CH]>> + Send + Sync> {
-		if mute || frequencies.is_empty() {
-			Box::new(iter::empty())
-		} else {
-			let frequencies = frequencies.to_vec();
-
-			let mono =
-				frequencies_to_samples::<SAMPLE_RATE>(NOfSamples::new(SAMPLE_RATE), &frequencies);
-
-			Box::new(
-				mono.into_iter()
-					.cycle()
-					.map(|frame| AudioFrame::new([frame[0]; N_CH])),
-			)
+		match self.stream_daemon.state() {
+			resource_daemon::DaemonState::Holding => AudioStreamSamplingState::Sampling,
+			resource_daemon::DaemonState::Quitting(reason)
+			| resource_daemon::DaemonState::Quit(reason) => {
+				AudioStreamSamplingState::Stopped(reason.unwrap_or(AudioStreamError::Cancelled))
+			}
 		}
 	}
 
+	/// # Panics
+	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_frequencies(&mut self, frequencies: &[f32]) {
-		self.frequencies = frequencies.to_vec();
-		self.player
-			.set_signal(Self::generate_signal(&self.frequencies, self.mute));
+		let mut shared = self.shared.write().unwrap();
+		shared.frequencies = frequencies.to_vec();
+		shared.signal = frequencies_to_samples(SAMPLE_RATE.into(), frequencies).multiply();
 	}
 
+	/// # Panics
+	/// - if the mutex guarding the internal state is poisoned.
 	#[must_use]
-	pub fn frequencies(&mut self) -> Vec<f32> {
-		self.frequencies.clone()
+	pub fn frequencies(&self) -> Vec<f32> {
+		self.shared.read().unwrap().frequencies.clone()
 	}
 
+	/// # Panics
+	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_mute(&mut self, mute: bool) {
-		self.mute = mute;
-		self.player
-			.set_signal(Self::generate_signal(&self.frequencies, self.mute));
+		self.shared.write().unwrap().mute = mute;
 	}
 
+	/// # Panics
+	/// - if the mutex guarding the internal state is poisoned.
 	#[must_use]
-	pub fn mute(&mut self) -> bool {
-		self.mute
+	pub fn mute(&self) -> bool {
+		self.shared.read().unwrap().mute
 	}
 
 	#[must_use]
@@ -157,20 +234,21 @@ pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 mod tests {
 	use std::{thread::sleep, time::Duration};
 
-	use super::OscillatorBuilder;
+	use super::*;
 
 	#[test]
 	fn test_440() {
-		let _oscillator = OscillatorBuilder::<44100, 1>::new(&[440.], false)
+		let oscillator = OscillatorBuilder::<44100, 1>::new(&[440.], false)
 			.build()
 			.unwrap();
-		sleep(Duration::from_secs(1));
+		sleep(Duration::from_secs(10));
+		assert!(!oscillator.mute());
 	}
 	#[test]
 	fn test_440_333() {
 		let _oscillator = OscillatorBuilder::<44100, 1>::new(&[440., 333.], false)
 			.build()
 			.unwrap();
-		sleep(Duration::from_secs(1));
+		sleep(Duration::from_secs(10));
 	}
 }
