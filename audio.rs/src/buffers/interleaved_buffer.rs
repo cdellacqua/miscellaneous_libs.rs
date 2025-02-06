@@ -1,4 +1,7 @@
-use std::borrow::{Borrow, BorrowMut};
+use std::{
+	borrow::{Borrow, BorrowMut},
+	vec,
+};
 
 use crate::NOfSamples;
 
@@ -112,10 +115,22 @@ impl<const SAMPLE_RATE: usize, Buffer: Borrow<[f32]>>
 	InterleavedAudioBuffer<SAMPLE_RATE, 1, Buffer>
 {
 	/// Same as `raw_buffer` but clearer in the intent and guaranteed
-	/// to exist only when `N_CH` equals 1
+	/// to exist only when `N_CH` equals 1.
 	#[must_use]
 	pub fn as_mono(&self) -> &[f32] {
 		self.raw_buffer.borrow()
+	}
+
+	/// Create a new [`InterleavedAudioBuffer`] replicating the mono signal for each
+	/// of the specified output channels.
+	pub fn multiply<const OUT_N_CH: usize>(
+		&self,
+	) -> InterleavedAudioBuffer<SAMPLE_RATE, OUT_N_CH, Vec<f32>> {
+		let mut raw_buffer = vec![0f32; *self.n_of_samples() * OUT_N_CH];
+		for (channels, mono_sample) in raw_buffer.chunks_mut(OUT_N_CH).zip(self.as_mono()) {
+			channels.fill(*mono_sample);
+		}
+		InterleavedAudioBuffer::new(raw_buffer)
 	}
 }
 
