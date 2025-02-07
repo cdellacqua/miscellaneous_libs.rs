@@ -85,7 +85,8 @@ impl<'a, const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>> 
 			// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
 			// - lifetime compatibility guaranteed by compatible borrows.
 			let frame: AudioFrame<N_CH, &mut [f32; N_CH]> = AudioFrame::new(unsafe {
-				&mut *self.interleaved_samples.raw_buffer_mut().borrow_mut()[self.i * N_CH..(self.i + 1) * N_CH]
+				&mut *self.interleaved_samples.raw_buffer_mut().borrow_mut()
+					[self.i * N_CH..(self.i + 1) * N_CH]
 					.as_mut_ptr()
 					.cast::<[_; N_CH]>()
 			});

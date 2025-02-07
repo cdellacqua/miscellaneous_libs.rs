@@ -83,9 +83,9 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 						&config.into(),
 						move |data, _| {
 							buffer.with_lock_mut(|b| {
-								data.iter()
-									.take(buffer_size - b.len())
-									.for_each(|&sample| b.push(sample));
+								b.extend_from_slice(
+									&data[0..data.len().min(buffer_size - data.len())],
+								);
 							});
 						},
 						move |err| {
@@ -132,7 +132,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 
 	/// Get the latest snapshot
 	#[must_use]
-	pub fn latest_snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
+	pub fn snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
 		InterleavedAudioBuffer::new(self.buffer.with_lock(Vec::clone))
 	}
 
@@ -149,5 +149,26 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::{thread::sleep, time::Duration};
+
+	use crate::output::AudioPlayerBuilder;
+
+	use super::*;
+
+	#[test]
+	#[ignore = "manually record and listen to the registered audio file"]
+	fn test_manual() {
+		let recorder = AudioRecorderBuilder::<44100, 1>::new(Duration::from_secs(2).into())
+			.build()
+			.unwrap();
+		sleep(recorder.capacity().into());
+		let snapshot = recorder.snapshot();
+		let mut player = AudioPlayerBuilder::<44100, 1>::new().build().unwrap();
+		player.play(snapshot);
 	}
 }

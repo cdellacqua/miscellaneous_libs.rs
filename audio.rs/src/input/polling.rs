@@ -105,9 +105,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 								     ref mut collected_samples,
 								     ref mut input_delay_moving_avg,
 								 }| {
-									for &v in data {
-										let _ = buffer.enqueue(v);
-									}
+									buffer.extend_from_slice(data);
 
 									// assert_eq!(data.len() % N_CH, 0);
 									*collected_samples += output_buffer_frames;

@@ -104,7 +104,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 							Some((frame_idx, signal)) => {
 								if *frame_idx >= signal.n_of_samples() {
 									output.fill(0.);
-									
+
 									currently_playing = None;
 									let mut guard = playing.0.lock().unwrap();
 									if guard.is_playing {
