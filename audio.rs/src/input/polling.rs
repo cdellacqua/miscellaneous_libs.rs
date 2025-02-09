@@ -4,8 +4,8 @@ use std::{
 };
 
 use cpal::{
-	traits::{DeviceTrait, HostTrait, StreamTrait},
-	Device, SampleFormat, SampleRate, Stream, SupportedStreamConfig,
+	traits::{DeviceTrait, StreamTrait},
+	Device, Stream, SupportedStreamConfig,
 };
 use math_utils::moving_avg::MovingAverage;
 use mutex_ext::LockExt;
@@ -13,48 +13,36 @@ use resource_daemon::ResourceDaemon;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
-	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamError,
+	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
 	AudioStreamSamplingState, NOfSamples,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputStreamPollerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	n_of_samples: NOfSamples<SAMPLE_RATE>,
+	device_name: Option<String>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub const fn new(n_of_samples: NOfSamples<SAMPLE_RATE>) -> Self {
-		Self { n_of_samples }
+	pub const fn new(n_of_samples: NOfSamples<SAMPLE_RATE>, device_name: Option<String>) -> Self {
+		Self {
+			n_of_samples,
+			device_name,
+		}
 	}
 
 	/// Build and start recording the input stream
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	///
-	/// # Panics
-	/// - if the input device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<InputStreamPoller<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let device = cpal::default_host()
-			.input_devices()
-			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
-			.next()
-			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
-
-		let config = device
-			.supported_input_configs()
-			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
-			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
-			.ok_or(AudioStreamBuilderError::NoConfigFound)?
-			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
-			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
-
-		// TODO: normalize everything to f32 and accept any format?
-		assert!(
-			matches!(config.sample_format(), cpal::SampleFormat::F32),
-			"expected F32 input stream"
-		);
+		let (device, config) = device_provider(
+			self.device_name.as_deref(),
+			crate::IOMode::Input,
+			N_CH,
+			SAMPLE_RATE,
+		)?;
 
 		Ok(InputStreamPoller::new(self.n_of_samples, device, config))
 	}

@@ -8,13 +8,13 @@ use std::{
 };
 
 use cpal::{
-	traits::{DeviceTrait, HostTrait, StreamTrait},
-	Device, SampleFormat, SampleRate, Stream, SupportedStreamConfig,
+	traits::{DeviceTrait, StreamTrait},
+	Device, Stream, SupportedStreamConfig,
 };
 use resource_daemon::ResourceDaemon;
 
 use crate::{
-	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamError,
+	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
 	AudioStreamSamplingState, NOfSamples,
 };
 
@@ -23,20 +23,22 @@ use crate::{
 pub struct OscillatorBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	frequencies: Vec<f32>,
 	mute: bool,
+	device_name: Option<String>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> Default for OscillatorBuilder<SAMPLE_RATE, N_CH> {
 	fn default() -> Self {
-		Self::new(&[], false)
+		Self::new(&[], false, None)
 	}
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub fn new(frequencies: &[f32], mute: bool) -> Self {
+	pub fn new(frequencies: &[f32], mute: bool, device_name: Option<String>) -> Self {
 		Self {
 			frequencies: frequencies.to_vec(),
 			mute,
+			device_name,
 		}
 	}
 
@@ -44,29 +46,13 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	///
-	/// # Panics
-	/// - if the output device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<Oscillator<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let device = cpal::default_host()
-			.output_devices()
-			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
-			.next()
-			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
-
-		let config = device
-			.supported_output_configs()
-			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
-			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
-			.ok_or(AudioStreamBuilderError::NoConfigFound)?
-			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
-			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
-
-		// TODO: normalize everything to f32 and accept any format?
-		assert!(
-			matches!(config.sample_format(), cpal::SampleFormat::F32),
-			"expected F32 input stream"
-		);
+		let (device, config) = device_provider(
+			self.device_name.as_deref(),
+			crate::IOMode::Output,
+			N_CH,
+			SAMPLE_RATE,
+		)?;
 
 		Ok(Oscillator::new(
 			device,
@@ -238,7 +224,7 @@ mod tests {
 
 	#[test]
 	fn test_440() {
-		let oscillator = OscillatorBuilder::<44100, 1>::new(&[440.], false)
+		let oscillator = OscillatorBuilder::<44100, 1>::new(&[440.], false, None)
 			.build()
 			.unwrap();
 		sleep(Duration::from_secs(10));
@@ -246,7 +232,7 @@ mod tests {
 	}
 	#[test]
 	fn test_440_333() {
-		let _oscillator = OscillatorBuilder::<44100, 1>::new(&[440., 333.], false)
+		let _oscillator = OscillatorBuilder::<44100, 1>::new(&[440., 333.], false, None)
 			.build()
 			.unwrap();
 		sleep(Duration::from_secs(10));

@@ -4,57 +4,43 @@ use std::{
 };
 
 use cpal::{
-	traits::{DeviceTrait, HostTrait, StreamTrait},
-	Device, SampleFormat, SampleRate, Stream, SupportedStreamConfig,
+	traits::{DeviceTrait, StreamTrait},
+	Device, Stream, SupportedStreamConfig,
 };
 use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
 use crate::{
-	buffers::InterleavedAudioBuffer,
-	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
-	NOfSamples,
+	buffers::InterleavedAudioBuffer, common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState}, device_provider, NOfSamples
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioRecorderBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	capacity: NOfSamples<SAMPLE_RATE>,
+	device_name: Option<String>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub const fn new(capacity: NOfSamples<SAMPLE_RATE>) -> Self {
-		Self { capacity }
+	pub const fn new(capacity: NOfSamples<SAMPLE_RATE>, device_name: Option<String>) -> Self {
+		Self {
+			capacity,
+			device_name,
+		}
 	}
 
 	/// Build and start recording the input stream
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	///
-	/// # Panics
-	/// - if the input device default configuration doesn't use f32 as the sample format.
 	pub fn build(&self) -> Result<AudioRecorder<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let device = cpal::default_host()
-			.input_devices()
-			.map_err(|_| AudioStreamBuilderError::UnableToListDevices)?
-			.next()
-			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
-
-		let config = device
-			.supported_input_configs()
-			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
-			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
-			.ok_or(AudioStreamBuilderError::NoConfigFound)?
-			.try_with_sample_rate(SampleRate(SAMPLE_RATE as u32))
-			.ok_or(AudioStreamBuilderError::NoConfigFound)?;
-
-		// TODO: normalize everything to f32 and accept any format?
-		assert!(
-			matches!(config.sample_format(), cpal::SampleFormat::F32),
-			"expected F32 input stream"
-		);
+		let (device, config) = device_provider(
+			self.device_name.as_deref(),
+			crate::IOMode::Input,
+			N_CH,
+			SAMPLE_RATE,
+		)?;
 
 		Ok(AudioRecorder::new(self.capacity, device, config))
 	}
@@ -165,12 +151,12 @@ mod tests {
 	#[test]
 	#[ignore = "manually record and listen to the registered audio file"]
 	fn test_manual() {
-		let recorder = AudioRecorderBuilder::<44100, 1>::new(Duration::from_secs(2).into())
+		let recorder = AudioRecorderBuilder::<44100, 1>::new(Duration::from_secs(2).into(), None)
 			.build()
 			.unwrap();
 		sleep(recorder.capacity().into());
 		let snapshot = recorder.snapshot();
-		let mut player = AudioPlayerBuilder::<44100, 1>::new().build().unwrap();
+		let mut player = AudioPlayerBuilder::<44100, 1>::new(None).build().unwrap();
 		player.play(snapshot);
 	}
 }
