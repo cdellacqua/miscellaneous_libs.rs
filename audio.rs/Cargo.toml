@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-# default = ["analysis"]
+default = ["analysis"]
 full = [
   "analysis",
   "input",
@@ -21,12 +21,10 @@ mutex_ext = { path = "../mutex_ext.rs" }
 resource_daemon = { path = "../resource_daemon.rs" }
 math_utils = { path = "../math_utils.rs" }
 thiserror = "2.0.9"
-# ringbuffer = { git = "https://github.com/cdellacqua/ringbuffer.rs.git", rev = "70832ae18daad75a317c7854311562e8c0014f2b" }
-ringbuffer = { path = "../../../Contrib/ringbuffer.rs" }
+ringbuffer = { git = "https://github.com/cdellacqua/ringbuffer.rs.git", rev = "d7bcb7a1817f8c841605025a7f00441c499e547c" }
+# ringbuffer = { path = "../../../Contrib/ringbuffer.rs" }
 derive_more = { version = "1.0.0", features = ["add", "add_assign", "deref", "deref_mut", "mul", "mul_assign"] }
 delegate = "0.13.2"
-# arrayref = "0.3.9"
-# itertools = "0.14.0"
 
 [dev-dependencies]
 rand = "0.8.5"
