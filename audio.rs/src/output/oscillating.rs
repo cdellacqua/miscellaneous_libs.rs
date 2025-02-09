@@ -55,7 +55,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 			.ok_or(AudioStreamBuilderError::NoDeviceFound)?;
 
 		let config = device
-			.supported_input_configs()
+			.supported_output_configs()
 			.map_err(|_| AudioStreamBuilderError::NoConfigFound)?
 			.find(|c| c.channels() as usize == N_CH && c.sample_format() == SampleFormat::F32)
 			.ok_or(AudioStreamBuilderError::NoConfigFound)?
