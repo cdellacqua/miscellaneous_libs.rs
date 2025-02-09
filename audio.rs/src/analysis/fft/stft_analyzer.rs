@@ -88,9 +88,9 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			"signal with incompatible length received"
 		);
 
-		for (i, c) in self.complex_signal.iter_mut().enumerate() {
+		for (i, (c, sample)) in self.complex_signal.iter_mut().zip(signal).enumerate() {
 			*c = Complex::new(
-				signal[i] * (self.windowing_fn).ratio_at(i, SAMPLES_PER_WINDOW),
+				sample * (self.windowing_fn).ratio_at(i, SAMPLES_PER_WINDOW),
 				0.0,
 			);
 		}
@@ -101,9 +101,10 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 		#[allow(clippy::cast_precision_loss)]
 		let normalization_factor = 1.0 / (samples as f32).sqrt();
 
+		let transform_size = self.cur_transform_bins.len();
 		self.cur_transform_bins
 			.iter_mut()
-			.zip(self.complex_signal.iter())
+			.zip(self.complex_signal.iter().take(transform_size))
 			.enumerate()
 			.for_each(|(i, (dst, src))| {
 				*dst = FftBinPoint {
