@@ -16,6 +16,8 @@ use crate::{
 	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
 	NOfSamples,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AudioRecorderBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	capacity: NOfSamples<SAMPLE_RATE>,
 }

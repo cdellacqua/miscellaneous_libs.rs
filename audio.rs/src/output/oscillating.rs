@@ -19,7 +19,7 @@ use crate::{
 };
 
 /* TODO: support different set of frequencies per channel? */
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OscillatorBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	frequencies: Vec<f32>,
 	mute: bool,

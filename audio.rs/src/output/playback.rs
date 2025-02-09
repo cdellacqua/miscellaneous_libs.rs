@@ -22,7 +22,7 @@ use crate::{
 	AudioStreamSamplingState, NOfSamples,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AudioPlayerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {}
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE, N_CH> {

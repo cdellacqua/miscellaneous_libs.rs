@@ -17,6 +17,7 @@ use crate::{
 	AudioStreamSamplingState, NOfSamples,
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InputStreamPollerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	n_of_samples: NOfSamples<SAMPLE_RATE>,
 }
