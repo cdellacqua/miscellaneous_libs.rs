@@ -206,10 +206,11 @@ pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 		})
 		.collect::<Vec<f32>>();
 
-	let &abs_max = mono
+	let abs_max = mono
 		.iter()
-		.max_by(|a, b| a.abs().total_cmp(&b.abs()))
-		.unwrap_or(&1.);
+		.map(|s| s.abs())
+		.max_by(f32::total_cmp)
+		.unwrap_or(1.);
 
 	mono.iter_mut().for_each(|s| *s /= abs_max);
 
@@ -236,5 +237,12 @@ mod tests {
 			.build()
 			.unwrap();
 		sleep(Duration::from_secs(10));
+	}
+
+	#[test]
+	fn test_frequencies_to_samples() {
+		let samples = frequencies_to_samples::<44100>(100.into(), &[440.]);
+		assert!(samples.as_mono()[0] < f32::EPSILON);
+		assert!(samples.as_mono()[1] > 0.0);
 	}
 }
