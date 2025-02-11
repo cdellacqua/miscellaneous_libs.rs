@@ -14,3 +14,5 @@ pub use common::*;
 
 mod n_of_samples;
 pub use n_of_samples::*;
+
+pub use rustfft::num_complex;

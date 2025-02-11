@@ -1,10 +1,15 @@
+use derive_more::derive::{Deref, DerefMut};
+use rustfft::num_complex::Complex32;
+
 use crate::NOfSamples;
 
 use super::{frequency_to_index, index_to_frequency};
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deref, DerefMut)]
 pub struct FftPoint<const SAMPLE_RATE: usize, const SAMPLES: usize> {
-	pub magnitude: f32,
+	#[deref]
+	#[deref_mut]
+	pub c: Complex32,
 	pub frequency: f32,
 }
 
@@ -17,15 +22,17 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> FftPoint<SAMPLE_RATE, SAMPL
 	#[must_use]
 	pub const fn to_fft_bin_point(&self) -> FftBinPoint<SAMPLE_RATE, SAMPLES> {
 		FftBinPoint {
-			magnitude: self.magnitude,
+			c: self.c,
 			frequency_idx: self.frequency_idx(),
 		}
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Deref, DerefMut)]
 pub struct FftBinPoint<const SAMPLE_RATE: usize, const SAMPLES: usize> {
-	pub magnitude: f32,
+	#[deref]
+	#[deref_mut]
+	pub c: Complex32,
 	pub frequency_idx: usize,
 }
 
@@ -38,7 +45,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> FftBinPoint<SAMPLE_RATE, SA
 	#[must_use]
 	pub const fn to_fft_point(&self) -> FftPoint<SAMPLE_RATE, SAMPLES> {
 		FftPoint {
-			magnitude: self.magnitude,
+			c: self.c,
 			frequency: self.frequency(),
 		}
 	}

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rustfft::{num_complex::Complex, Fft, FftPlanner};
+use rustfft::{num_complex::{Complex, Complex32}, Fft, FftPlanner};
 
 use crate::{
 	analysis::{fft::FftBinPoint, windowing_fns::HannWindow, WindowingFn},
@@ -13,7 +13,7 @@ use super::{fft_frequency_bins, fft_real_length, FftPoint};
 pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
 	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
 	fft_processor: Arc<dyn Fft<f32>>,
-	complex_signal: Vec<Complex<f32>>,
+	complex_signal: Vec<Complex32>,
 	cur_transform_bins: Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	cur_transform: Vec<FftPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 }
@@ -48,14 +48,14 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
 			cur_transform_bins: vec![
 				FftBinPoint {
-					magnitude: 0.,
+					c: Complex32::default(),
 					frequency_idx: 0
 				};
 				transform_size
 			],
 			cur_transform: vec![
 				FftPoint {
-					magnitude: 0.,
+					c: Complex32::default(),
 					frequency: 0.
 				};
 				transform_size
@@ -109,7 +109,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			.for_each(|(i, (dst, src))| {
 				*dst = FftBinPoint {
 					frequency_idx: i,
-					magnitude: (src * normalization_factor).norm(),
+					c: src * normalization_factor,
 				};
 			});
 
