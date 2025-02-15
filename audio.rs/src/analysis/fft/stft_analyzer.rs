@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use rustfft::{num_complex::{Complex, Complex32}, Fft, FftPlanner};
+use rustfft::{
+	num_complex::{Complex, Complex32},
+	Fft, FftPlanner,
+};
 
 use crate::{
 	analysis::{fft::FftBinPoint, windowing_fns::HannWindow, WindowingFn},

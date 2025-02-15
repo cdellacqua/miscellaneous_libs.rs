@@ -12,7 +12,9 @@ use resource_daemon::ResourceDaemon;
 use mutex_ext::LockExt;
 
 use crate::{
-	buffers::InterleavedAudioBuffer, common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState}, device_provider, NOfSamples
+	buffers::InterleavedAudioBuffer,
+	common::{AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState},
+	device_provider, NOfSamples,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
