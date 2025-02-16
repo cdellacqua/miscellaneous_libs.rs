@@ -16,7 +16,7 @@ mod tests {
 
 	use crate::{
 		analysis::{
-			fft::{frequency_to_index, GoertzelAnalyzer, StftAnalyzer},
+			fft::{frequency_to_bin_idx, GoertzelAnalyzer, StftAnalyzer},
 			windowing_fns::HannWindow,
 		},
 		output::frequencies_to_samples,
@@ -30,7 +30,7 @@ mod tests {
 		const SAMPLES: NOfSamples<SAMPLE_RATE> = NOfSamples::new(SAMPLES_RAW);
 
 		let frequency = 440.;
-		let frequency_bin = frequency_to_index(frequency, SAMPLES);
+		let frequency_bin = frequency_to_bin_idx(frequency, SAMPLES);
 
 		let signal = frequencies_to_samples(SAMPLES, &[frequency]);
 		let signal = signal.as_mono();
@@ -62,7 +62,7 @@ mod tests {
 			.unwrap();
 
 		assert_eq!(
-			stft_result.frequency_idx, goertzel_result.frequency_idx,
+			stft_result.bin_idx, goertzel_result.bin_idx,
 			"goertzel and stft should yield the same frequency result"
 		);
 		assert!(

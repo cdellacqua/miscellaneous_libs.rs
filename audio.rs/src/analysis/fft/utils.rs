@@ -12,7 +12,7 @@ pub const fn fft_real_length(samples: usize) -> usize {
 }
 
 #[must_use]
-pub const fn index_to_frequency<const SAMPLE_RATE: usize>(
+pub const fn bin_idx_to_frequency<const SAMPLE_RATE: usize>(
 	i: usize,
 	samples: NOfSamples<SAMPLE_RATE>,
 ) -> f32 {
@@ -21,7 +21,7 @@ pub const fn index_to_frequency<const SAMPLE_RATE: usize>(
 }
 
 #[must_use]
-pub const fn frequency_to_index<const SAMPLE_RATE: usize>(
+pub const fn frequency_to_bin_idx<const SAMPLE_RATE: usize>(
 	frequency: f32,
 	samples: NOfSamples<SAMPLE_RATE>,
 ) -> usize {
@@ -33,17 +33,17 @@ pub const fn frequency_to_index<const SAMPLE_RATE: usize>(
 pub fn fft_frequency_bins<const SAMPLE_RATE: usize>(
 	samples: NOfSamples<SAMPLE_RATE>,
 ) -> impl Iterator<Item = f32> {
-	(0..fft_real_length(*samples)).map(move |i| index_to_frequency(i, samples))
+	(0..fft_real_length(*samples)).map(move |i| bin_idx_to_frequency(i, samples))
 }
 
 #[cfg(test)]
 mod tests {
 	use crate::NOfSamples;
 
-	use super::{frequency_to_index, index_to_frequency};
+	use super::{frequency_to_bin_idx, bin_idx_to_frequency};
 
 	#[test]
-	fn frequency_to_index_and_viceversa() {
+	fn frequency_to_bin_idx_and_viceversa() {
 		const SAMPLE_RATE: usize = 44100;
 
 		for samples in 1..=54100 {
@@ -53,14 +53,14 @@ mod tests {
 			for i in 0..samples {
 				assert_eq!(
 					i,
-					frequency_to_index(
-						index_to_frequency(i, NOfSamples::<SAMPLE_RATE>::new(samples)),
+					frequency_to_bin_idx(
+						bin_idx_to_frequency(i, NOfSamples::<SAMPLE_RATE>::new(samples)),
 						NOfSamples::<SAMPLE_RATE>::new(samples)
 					)
 				);
 				assert!(
-					frequency_to_index(
-						index_to_frequency(i, NOfSamples::<SAMPLE_RATE>::new(samples)),
+					frequency_to_bin_idx(
+						bin_idx_to_frequency(i, NOfSamples::<SAMPLE_RATE>::new(samples)),
 						NOfSamples::<SAMPLE_RATE>::new(samples)
 					) < samples
 				);

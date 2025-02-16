@@ -49,7 +49,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			cur_transform_bins: vec![
 				FftBinPoint {
 					c: Complex32::default(),
-					frequency_idx: 0
+					bin_idx: 0
 				};
 				transform_size
 			],
@@ -101,7 +101,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			.enumerate()
 			.for_each(|(i, (dst, src))| {
 				*dst = FftBinPoint {
-					frequency_idx: i,
+					bin_idx: i,
 					c: src * normalization_factor,
 				};
 			});
