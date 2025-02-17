@@ -1,9 +1,8 @@
-use std::{
-	ops::{Div, DivAssign, Mul, MulAssign},
-	time::Duration,
-};
+use std::time::Duration;
 
-use derive_more::derive::{Add, AddAssign, Deref, DerefMut, Sub, SubAssign};
+use derive_more::derive::{
+	Add, AddAssign, Deref, DerefMut, Div, DivAssign, Mul, MulAssign, Sub, SubAssign,
+};
 
 /// Note: will convert to microseconds to approximate the number of samples
 #[must_use]
@@ -33,6 +32,10 @@ pub const fn n_of_samples_to_duration(samples: usize, sample_rate: usize) -> Dur
 	AddAssign,
 	Sub,
 	SubAssign,
+	Div,
+	DivAssign,
+	Mul,
+	MulAssign,
 )]
 pub struct NOfSamples<const SAMPLE_RATE: usize>(usize);
 
@@ -85,84 +88,6 @@ impl<const SAMPLE_RATE: usize> From<NOfSamples<SAMPLE_RATE>> for Duration {
 impl<const SAMPLE_RATE: usize> From<NOfSamples<SAMPLE_RATE>> for usize {
 	fn from(value: NOfSamples<SAMPLE_RATE>) -> Self {
 		value.0
-	}
-}
-
-// impl<const SAMPLE_RATE: usize> Add for NOfSamples<SAMPLE_RATE> {
-// 	type Output = NOfSamples<SAMPLE_RATE>;
-
-// 	fn add(self, rhs: Self) -> Self::Output {
-// 		Self::new(self.0 + rhs.0)
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize> AddAssign for NOfSamples<SAMPLE_RATE> {
-// 	fn add_assign(&mut self, rhs: Self) {
-// 		self.0 += rhs.0;
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize> Sub for NOfSamples<SAMPLE_RATE> {
-// 	type Output = NOfSamples<SAMPLE_RATE>;
-
-// 	fn sub(self, rhs: Self) -> Self::Output {
-// 		Self::new(self.0 - rhs.0)
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize> SubAssign for NOfSamples<SAMPLE_RATE> {
-// 	fn sub_assign(&mut self, rhs: Self) {
-// 		self.0 -= rhs.0;
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize> Div for NOfSamples<SAMPLE_RATE> {
-// 	type Output = NOfSamples<SAMPLE_RATE>;
-
-// 	fn div(self, rhs: Self) -> Self::Output {
-// 		Self::new(self.0 / rhs.0)
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize> DivAssign for NOfSamples<SAMPLE_RATE> {
-// 	fn div_assign(&mut self, rhs: Self) {
-// 		self.0 /= rhs.0;
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize> Mul for NOfSamples<SAMPLE_RATE> {
-// 	type Output = NOfSamples<SAMPLE_RATE>;
-
-// 	fn mul(self, rhs: Self) -> Self::Output {
-// 		Self::new(self.0 * rhs.0)
-// 	}
-// }
-
-impl<const SAMPLE_RATE: usize> Mul<usize> for NOfSamples<SAMPLE_RATE> {
-	type Output = NOfSamples<SAMPLE_RATE>;
-
-	fn mul(self, rhs: usize) -> Self::Output {
-		Self::new(self.0 * rhs)
-	}
-}
-
-impl<const SAMPLE_RATE: usize> MulAssign<usize> for NOfSamples<SAMPLE_RATE> {
-	fn mul_assign(&mut self, rhs: usize) {
-		self.0 *= rhs;
-	}
-}
-
-impl<const SAMPLE_RATE: usize> Div<usize> for NOfSamples<SAMPLE_RATE> {
-	type Output = NOfSamples<SAMPLE_RATE>;
-
-	fn div(self, rhs: usize) -> Self::Output {
-		Self::new(self.0 / rhs)
-	}
-}
-
-impl<const SAMPLE_RATE: usize> DivAssign<usize> for NOfSamples<SAMPLE_RATE> {
-	fn div_assign(&mut self, rhs: usize) {
-		self.0 /= rhs;
 	}
 }
 

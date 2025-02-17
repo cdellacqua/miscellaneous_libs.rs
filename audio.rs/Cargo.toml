@@ -23,7 +23,7 @@ math_utils = { path = "../math_utils.rs" }
 thiserror = "2.0.9"
 ringbuffer = { git = "https://github.com/cdellacqua/ringbuffer.rs.git", rev = "d7bcb7a1817f8c841605025a7f00441c499e547c" }
 # ringbuffer = { path = "../../../Contrib/ringbuffer.rs" }
-derive_more = { version = "1.0.0", features = ["add", "add_assign", "deref", "deref_mut", "mul", "mul_assign"] }
+derive_more = { version = "1.0.0", features = ["add", "add_assign", "deref", "deref_mut", "mul", "mul_assign", "from"] }
 delegate = "0.13.2"
 
 [dev-dependencies]

@@ -185,6 +185,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	}
 
 	/// Note: blocking, `set_signal` is the non-blocking equivalent.
+	///
 	/// Note: the wait time is based on when the iterator is exhausted and an estimate on when the output
 	/// device should play the last samples.
 	pub fn play(&mut self, signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>) {

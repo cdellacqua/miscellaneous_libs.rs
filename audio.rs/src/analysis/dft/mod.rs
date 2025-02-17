@@ -1,9 +1,3 @@
-mod utils;
-pub use utils::*;
-
-mod fft_point;
-pub use fft_point::*;
-
 mod stft_analyzer;
 pub use stft_analyzer::*;
 
@@ -16,25 +10,24 @@ mod tests {
 
 	use crate::{
 		analysis::{
-			fft::{frequency_to_bin_idx, GoertzelAnalyzer, StftAnalyzer},
+			dft::{GoertzelAnalyzer, StftAnalyzer},
 			windowing_fns::HannWindow,
+			FrequencyBin,
 		},
 		output::frequencies_to_samples,
-		NOfSamples,
 	};
 
 	#[test]
 	fn cross_check_goertzel_and_stft() {
 		const SAMPLE_RATE: usize = 44100;
-		const SAMPLES_RAW: usize = 44100;
-		const SAMPLES: NOfSamples<SAMPLE_RATE> = NOfSamples::new(SAMPLES_RAW);
+		const SAMPLES: usize = 44100;
 
 		let frequency = 440.;
-		let frequency_bin = frequency_to_bin_idx(frequency, SAMPLES);
+		let frequency_bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::from_frequency(frequency);
 
-		let signal = frequencies_to_samples(SAMPLES, &[frequency]);
+		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
 		let signal = signal.as_mono();
-		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_RAW> = GoertzelAnalyzer::new(
+		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES> = GoertzelAnalyzer::new(
 			vec![
 				frequency_bin - 20,
 				frequency_bin - 15,
@@ -48,7 +41,7 @@ mod tests {
 			],
 			HannWindow::new(),
 		);
-		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES_RAW> = StftAnalyzer::new(HannWindow::new());
+		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES> = StftAnalyzer::new(HannWindow::new());
 
 		let stft_result = stft
 			.analyze_bins(signal)
@@ -62,7 +55,7 @@ mod tests {
 			.unwrap();
 
 		assert_eq!(
-			stft_result.bin_idx, goertzel_result.bin_idx,
+			stft_result.frequency_bin, goertzel_result.frequency_bin,
 			"goertzel and stft should yield the same frequency result"
 		);
 		assert!(

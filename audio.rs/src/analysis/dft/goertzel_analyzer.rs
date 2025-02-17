@@ -2,15 +2,13 @@ use std::{f32::consts::TAU, sync::Arc};
 
 use rustfft::num_complex::Complex32;
 
-use crate::analysis::WindowingFn;
-
-use super::FftBinPoint;
+use crate::analysis::{FrequencyBin, Harmonic, WindowingFn};
 
 #[derive(Clone)]
 pub struct GoertzelAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
 	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
-	cur_transform_bins: Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
-	frequency_bins: Vec<usize>,
+	cur_transform: Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
+	frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	coefficients: Vec<(f32, Complex32)>,
 }
 
@@ -22,7 +20,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
 			"GoertzelAnalyzer<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
 		))
 		.field("windowing_fn", &"omitted")
-		.field("cur_transform_bins", &self.cur_transform_bins)
+		.field("cur_transform", &self.cur_transform)
 		.field("frequency_bins", &self.frequency_bins)
 		.field("coefficients", &self.coefficients)
 		.finish()
@@ -34,7 +32,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 {
 	#[allow(clippy::cast_precision_loss)]
 	pub fn new(
-		mut frequency_bins: Vec<usize>,
+		mut frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 		windowing_fn: impl WindowingFn + Send + Sync + 'static,
 	) -> Self {
 		frequency_bins.sort_unstable();
@@ -43,11 +41,11 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			coefficients: frequency_bins
 				.iter()
 				.map(|&bin| {
-					let ω = TAU * bin as f32 / SAMPLES_PER_WINDOW as f32;
+					let ω = TAU * bin.bin_idx() as f32 / SAMPLES_PER_WINDOW as f32;
 					(2.0 * ω.cos(), Complex32::new(ω.cos(), ω.sin()))
 				})
 				.collect(),
-			cur_transform_bins: vec![FftBinPoint::default(); frequency_bins.len()],
+			cur_transform: vec![Harmonic::default(); frequency_bins.len()],
 			frequency_bins,
 			windowing_fn: Arc::new(windowing_fn),
 		}
@@ -63,7 +61,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	pub fn analyze_bins(
 		&mut self,
 		signal: &[f32],
-	) -> &Vec<FftBinPoint<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
+	) -> &Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
 		let samples = signal.len();
 
 		assert_eq!(
@@ -86,7 +84,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			.frequency_bins
 			.iter()
 			.zip(self.coefficients.iter())
-			.zip(self.cur_transform_bins.iter_mut())
+			.zip(self.cur_transform.iter_mut())
 		{
 			let mut z1 = 0.0;
 			let mut z2 = 0.0;
@@ -97,13 +95,13 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 				z1 = z0;
 			}
 
-			*bin_point = FftBinPoint {
+			*bin_point = Harmonic {
 				c: Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * normalization_factor,
-				bin_idx: bin,
+				frequency_bin: bin,
 			};
 		}
 
-		&self.cur_transform_bins
+		&self.cur_transform
 	}
 
 	#[must_use]

@@ -15,7 +15,7 @@ use resource_daemon::ResourceDaemon;
 
 use crate::{
 	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState, NOfSamples,
+	AudioStreamSamplingState,
 };
 
 /* TODO: support different set of frequencies per channel? */
@@ -83,7 +83,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	) -> Self {
 		let shared: Arc<RwLock<OscillatorShared<SAMPLE_RATE, N_CH>>> =
 			Arc::new(RwLock::new(OscillatorShared {
-				signal: frequencies_to_samples(SAMPLE_RATE.into(), &frequencies).multiply(),
+				signal: frequencies_to_samples(SAMPLE_RATE, &frequencies).multiply(),
 				frequencies,
 				mute,
 			}));
@@ -157,7 +157,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	pub fn set_frequencies(&mut self, frequencies: &[f32]) {
 		let mut shared = self.shared.write().unwrap();
 		shared.frequencies = frequencies.to_vec();
-		shared.signal = frequencies_to_samples(SAMPLE_RATE.into(), frequencies).multiply();
+		shared.signal = frequencies_to_samples(SAMPLE_RATE, frequencies).multiply();
 	}
 
 	/// # Panics
@@ -193,10 +193,10 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 
 #[must_use]
 pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
-	samples: NOfSamples<SAMPLE_RATE>,
+	samples: usize,
 	frequencies: &[f32],
 ) -> InterleavedAudioBuffer<SAMPLE_RATE, 1, Vec<f32>> {
-	let mut mono = (0..*samples)
+	let mut mono = (0..samples)
 		.map(move |i| {
 			#[allow(clippy::cast_precision_loss)]
 			frequencies
@@ -224,6 +224,7 @@ mod tests {
 	use super::*;
 
 	#[test]
+	#[ignore = "manually run this test to hear to the resulting sound"]
 	fn test_440() {
 		let oscillator = OscillatorBuilder::<44100, 1>::new(&[440.], false, None)
 			.build()
@@ -232,6 +233,7 @@ mod tests {
 		assert!(!oscillator.mute());
 	}
 	#[test]
+	#[ignore = "manually run this test to hear to the resulting sound"]
 	fn test_440_333() {
 		let _oscillator = OscillatorBuilder::<44100, 1>::new(&[440., 333.], false, None)
 			.build()
@@ -241,7 +243,7 @@ mod tests {
 
 	#[test]
 	fn test_frequencies_to_samples() {
-		let samples = frequencies_to_samples::<44100>(100.into(), &[440.]);
+		let samples = frequencies_to_samples::<44100>(100, &[440.]);
 		assert!(samples.as_mono()[0] < f32::EPSILON);
 		assert!(samples.as_mono()[1] > 0.0);
 	}
