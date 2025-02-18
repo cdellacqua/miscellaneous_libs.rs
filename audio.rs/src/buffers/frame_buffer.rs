@@ -2,7 +2,7 @@
 
 use std::{
 	borrow::{Borrow, BorrowMut},
-	ops::{Deref, DerefMut, Index, IndexMut},
+	ops::{Index, IndexMut},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -91,16 +91,18 @@ impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> IndexMut<usize>
 	}
 }
 
-impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> Deref for AudioFrame<N_CH, Samples> {
-	type Target = [f32; N_CH];
-
-	fn deref(&self) -> &Self::Target {
+impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AsRef<[f32; N_CH]>
+	for AudioFrame<N_CH, Samples>
+{
+	fn as_ref(&self) -> &[f32; N_CH] {
 		self.0.borrow()
 	}
 }
 
-impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> DerefMut for AudioFrame<N_CH, Samples> {
-	fn deref_mut(&mut self) -> &mut Self::Target {
+impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> AsMut<[f32; N_CH]>
+	for AudioFrame<N_CH, Samples>
+{
+	fn as_mut(&mut self) -> &mut [f32; N_CH] {
 		self.0.borrow_mut()
 	}
 }

@@ -95,10 +95,10 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 				z1 = z0;
 			}
 
-			*bin_point = Harmonic {
-				c: Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * normalization_factor,
-				frequency_bin: bin,
-			};
+			*bin_point = Harmonic::new(
+				Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * normalization_factor,
+				bin,
+			);
 		}
 
 		&self.cur_transform

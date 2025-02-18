@@ -61,7 +61,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 		device: Device,
 		config: SupportedStreamConfig,
 	) -> Self {
-		let buffer_size = N_CH * *capacity;
+		let buffer_size = N_CH * capacity.inner();
 
 		let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::with_capacity(buffer_size)));
 

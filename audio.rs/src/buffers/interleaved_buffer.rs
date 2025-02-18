@@ -126,7 +126,7 @@ impl<const SAMPLE_RATE: usize, Buffer: Borrow<[f32]>>
 	pub fn multiply<const OUT_N_CH: usize>(
 		&self,
 	) -> InterleavedAudioBuffer<SAMPLE_RATE, OUT_N_CH, Vec<f32>> {
-		let mut raw_buffer = vec![0f32; *self.n_of_samples() * OUT_N_CH];
+		let mut raw_buffer = vec![0f32; self.n_of_samples().inner() * OUT_N_CH];
 		for (channels, mono_sample) in raw_buffer.chunks_mut(OUT_N_CH).zip(self.as_mono()) {
 			channels.fill(*mono_sample);
 		}
@@ -152,7 +152,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	/// - if the index is out of bound.
 	#[must_use]
 	pub fn at_mut(&mut self, index: usize) -> AudioFrame<N_CH, &mut [f32; N_CH]> {
-		assert!(index < *self.n_of_samples());
+		assert!(index < self.n_of_samples().inner());
 
 		// SAFETY:
 		// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
@@ -212,7 +212,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH
 	fn from_iter<T: IntoIterator<Item = AudioFrame<N_CH, FrameBuffer>>>(iter: T) -> Self {
 		Self::new(
 			iter.into_iter()
-				.flat_map(|frame| frame.cloned().into_iter())
+				.flat_map(|frame| (*frame.samples()).into_iter())
 				.collect::<Vec<_>>(),
 		)
 	}
@@ -224,7 +224,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH
 	fn extend<T: IntoIterator<Item = AudioFrame<N_CH, FrameBuffer>>>(&mut self, iter: T) {
 		self.raw_buffer.extend(
 			iter.into_iter()
-				.flat_map(|frame| frame.cloned().into_iter()),
+				.flat_map(|frame| (*frame.samples()).into_iter()),
 		);
 	}
 }
@@ -269,6 +269,22 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, A: Borrow<[f32]>, B: Borrow<[f
 // 		&mut self.raw_buffer.borrow_mut()[index]
 // 	}
 // }
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>> AsRef<[f32]>
+	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
+{
+	fn as_ref(&self) -> &[f32] {
+		self.raw_buffer.borrow()
+	}
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>> AsMut<[f32]>
+	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
+{
+	fn as_mut(&mut self) -> &mut [f32] {
+		self.raw_buffer.borrow_mut()
+	}
+}
 
 #[cfg(test)]
 mod tests {

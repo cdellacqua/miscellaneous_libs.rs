@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use derive_more::derive::{
-	Add, AddAssign, Deref, DerefMut, Div, DivAssign, Mul, MulAssign, Sub, SubAssign,
-};
+use derive_more::derive::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
 /// Note: will convert to microseconds to approximate the number of samples
 #[must_use]
@@ -24,8 +22,6 @@ pub const fn n_of_samples_to_duration(samples: usize, sample_rate: usize) -> Dur
 	Eq,
 	PartialOrd,
 	Ord,
-	Deref,
-	DerefMut,
 	Default,
 	Hash,
 	Add,

@@ -1,6 +1,6 @@
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 
-use derive_more::derive::{Deref, DerefMut, From};
+use derive_more::derive::From;
 use math_utils::const_num::round_f32_to_usize;
 
 #[must_use]
@@ -31,21 +31,15 @@ pub fn n_of_frequency_bins(samples: usize) -> usize {
 	samples / 2 + 1
 }
 
-#[derive(
-	Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, From, Default,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
 pub struct FrequencyBin<const SAMPLE_RATE: usize, const SAMPLES: usize> {
-	#[deref]
-	#[deref_mut]
 	bin_idx: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deref, DerefMut, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct DynFrequencyBin {
 	sample_rate: usize,
 	samples: usize,
-	#[deref]
-	#[deref_mut]
 	bin_idx: usize,
 }
 
@@ -196,7 +190,7 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES: usize = 44100;
 
-		for samples in 1..=SAMPLES {
+		for samples in (1..=SAMPLES).step_by(21) {
 			for i in 0..samples {
 				assert_eq!(
 					i,

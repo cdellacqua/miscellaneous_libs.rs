@@ -43,13 +43,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			windowing_fn: Arc::new(windowing_fn),
 			fft_processor: planner.plan_fft_forward(SAMPLES_PER_WINDOW),
 			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
-			cur_transform_bins: vec![
-				Harmonic {
-					c: Complex32::default(),
-					frequency_bin: FrequencyBin::default()
-				};
-				transform_size
-			],
+			cur_transform_bins: vec![Harmonic::default(); transform_size],
 		}
 	}
 
@@ -92,10 +86,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			.zip(self.complex_signal.iter().take(transform_size))
 			.enumerate()
 			.for_each(|(i, (dst, src))| {
-				*dst = Harmonic {
-					frequency_bin: FrequencyBin::new(i),
-					c: src * normalization_factor,
-				};
+				*dst = Harmonic::new(src * normalization_factor, FrequencyBin::new(i));
 			});
 
 		&self.cur_transform_bins
@@ -121,6 +112,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
 }
 
 #[cfg(test)]
+#[cfg(feature = "output")]
 mod tests {
 	use crate::{analysis::all_frequency_bins, output::frequencies_to_samples};
 
@@ -146,7 +138,7 @@ mod tests {
 			assert!(
 				(analysis
 					.iter()
-					.max_by(|a, b| a.norm_sqr().total_cmp(&b.norm_sqr()))
+					.max_by(|a, b| a.power().total_cmp(&b.power()))
 					.unwrap()
 					.frequency() - bins[10].frequency())
 				.abs() < f32::EPSILON,

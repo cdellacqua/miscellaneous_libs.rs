@@ -69,7 +69,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		let shared = Arc::new(Mutex::new({
 			PollerState {
 				buffer: {
-					let mut buf = AllocRingBuffer::new(N_CH * *n_of_samples);
+					let mut buf = AllocRingBuffer::new(N_CH * n_of_samples.inner());
 					buf.fill(0.);
 					buf
 				},
@@ -201,9 +201,9 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		skip.map(|skip| {
 			(
 				InterleavedAudioBuffer::new({
-					let mut out = vec![0.; shared.buffer.len() - *skip];
+					let mut out = vec![0.; shared.buffer.len() - skip.inner()];
 					if !out.is_empty() {
-						shared.buffer.copy_to_slice(*skip, &mut out);
+						shared.buffer.copy_to_slice(skip.inner(), &mut out);
 					}
 					out
 				}),

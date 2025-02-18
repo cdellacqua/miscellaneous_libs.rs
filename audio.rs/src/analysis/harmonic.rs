@@ -1,34 +1,34 @@
-use derive_more::derive::{Deref, DerefMut};
 use rustfft::num_complex::Complex32;
 
 use super::FrequencyBin;
 
-#[derive(Debug, Clone, Copy, PartialEq, Default, Deref, DerefMut)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Harmonic<const SAMPLE_RATE: usize, const SAMPLES: usize> {
-	#[deref]
-	#[deref_mut]
-	pub c: Complex32,
-	pub frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>,
+	phasor: Complex32,
+	frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>,
 }
 
 impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPLES> {
 	#[must_use]
-	pub fn new(c: Complex32, frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>) -> Self {
-		Self { c, frequency_bin }
+	pub fn new(phasor: Complex32, frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>) -> Self {
+		Self {
+			phasor,
+			frequency_bin,
+		}
 	}
 
 	#[must_use]
-	pub fn from_bin_idx(c: Complex32, bin_idx: usize) -> Self {
+	pub fn from_bin_idx(phasor: Complex32, bin_idx: usize) -> Self {
 		Self {
-			c,
+			phasor,
 			frequency_bin: FrequencyBin::new(bin_idx),
 		}
 	}
 
 	#[must_use]
-	pub fn from_frequency(c: Complex32, frequency: f32) -> Self {
+	pub fn from_frequency(phasor: Complex32, frequency: f32) -> Self {
 		Self {
-			c,
+			phasor,
 			frequency_bin: FrequencyBin::from_frequency(frequency),
 		}
 	}
@@ -45,12 +45,12 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPL
 
 	#[must_use]
 	pub fn phase(&self) -> f32 {
-		self.arg()
+		self.phasor.arg()
 	}
 
 	#[must_use]
 	pub fn amplitude(&self) -> f32 {
-		self.norm()
+		self.phasor.norm()
 	}
 
 	/// The value returned by this method is unitless and represents
@@ -62,6 +62,13 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPL
 		// P = V²/R
 		//
 		// where P is power, V is voltage and R is resistance.
-		self.norm_sqr()
+		self.phasor.norm_sqr()
+	}
+
+	/// Get the underlying complex number representing the
+	/// phase and amplitude of this harmonic.
+	#[must_use]
+	pub fn phasor(&self) -> Complex32 {
+		self.phasor
 	}
 }

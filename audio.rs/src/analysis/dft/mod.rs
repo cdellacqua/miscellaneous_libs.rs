@@ -5,6 +5,7 @@ mod goertzel_analyzer;
 pub use goertzel_analyzer::*;
 
 #[cfg(test)]
+#[cfg(feature = "output")]
 mod tests {
 	use std::f32::consts::TAU;
 
@@ -46,24 +47,24 @@ mod tests {
 		let stft_result = stft
 			.analyze_bins(signal)
 			.iter()
-			.max_by(|a, b| a.norm_sqr().total_cmp(&b.norm_sqr()))
+			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap();
 		let goertzel_result = goertzel
 			.analyze_bins(signal)
 			.iter()
-			.max_by(|a, b| a.norm_sqr().total_cmp(&b.norm_sqr()))
+			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap();
 
 		assert_eq!(
-			stft_result.frequency_bin, goertzel_result.frequency_bin,
+			stft_result.bin_idx(), goertzel_result.bin_idx(),
 			"goertzel and stft should yield the same frequency result"
 		);
 		assert!(
-			(stft_result.c.norm() - goertzel_result.c.norm()).abs() < 0.01,
-			"goertzel and stft should yield a similar magnitude result"
+			(stft_result.amplitude() - goertzel_result.amplitude()).abs() < 0.01,
+			"goertzel and stft should yield a similar amplitude result"
 		);
 		assert!(
-			(stft_result.c.arg() - goertzel_result.c.arg()).abs() < TAU / 100.,
+			(stft_result.phase() - goertzel_result.phase()).abs() < TAU / 100.,
 			"goertzel and stft should yield a similar phase result"
 		);
 	}

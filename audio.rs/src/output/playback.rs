@@ -110,11 +110,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 									let clamped_frames =
 										output_frames.min(signal.n_of_samples() - *frame_idx);
 
-									output[..*clamped_frames].copy_from_slice(
-										&signal.raw_buffer()[**frame_idx * N_CH
-											..(**frame_idx + *clamped_frames) * N_CH],
+									output[..clamped_frames.inner()].copy_from_slice(
+										&signal.raw_buffer()[frame_idx.inner() * N_CH
+											..(frame_idx.inner() + clamped_frames.inner()) * N_CH],
 									);
-									output[*clamped_frames..].fill(0.);
+									output[clamped_frames.inner()..].fill(0.);
 
 									*frame_idx += clamped_frames;
 								}
