@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{ops::{Add, AddAssign, Sub, SubAssign}, time::Duration};
 
 use derive_more::derive::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 
@@ -84,6 +84,34 @@ impl<const SAMPLE_RATE: usize> From<NOfSamples<SAMPLE_RATE>> for Duration {
 impl<const SAMPLE_RATE: usize> From<NOfSamples<SAMPLE_RATE>> for usize {
 	fn from(value: NOfSamples<SAMPLE_RATE>) -> Self {
 		value.0
+	}
+}
+
+impl<const SAMPLE_RATE:usize> Add<usize> for NOfSamples<SAMPLE_RATE> {
+	type Output = Self;
+
+	fn add(self, rhs: usize) -> Self::Output {
+		(self.0 + rhs).into()
+	}
+}
+
+impl<const SAMPLE_RATE:usize> AddAssign<usize> for NOfSamples<SAMPLE_RATE> {
+	fn add_assign(&mut self, rhs: usize) {
+		self.0 += rhs;
+	}
+}
+
+impl<const SAMPLE_RATE:usize> Sub<usize> for NOfSamples<SAMPLE_RATE> {
+	type Output = Self;
+
+	fn sub(self, rhs: usize) -> Self::Output {
+		(self.0 - rhs).into()
+	}
+}
+
+impl<const SAMPLE_RATE:usize> SubAssign<usize> for NOfSamples<SAMPLE_RATE> {
+	fn sub_assign(&mut self, rhs: usize) {
+		self.0 -= rhs;
 	}
 }
 
