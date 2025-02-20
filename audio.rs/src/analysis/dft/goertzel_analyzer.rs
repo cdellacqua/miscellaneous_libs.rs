@@ -4,38 +4,23 @@ use rustfft::num_complex::Complex32;
 
 use crate::analysis::{FrequencyBin, Harmonic, WindowingFn};
 
-#[derive(Clone)]
-pub struct GoertzelAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing> {
-	windowing_fn: Windowing,
+#[derive(Debug)]
+pub struct GoertzelAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
+	windowing_values: Vec<f32>,
 	cur_transform: Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	cur_signal: Vec<f32>,
 	frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	coefficients: Vec<(f32, Complex32)>,
+	normalization_factor: f32,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
-	std::fmt::Debug for GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
-{
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct(&format!(
-			"GoertzelAnalyzer<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
-		))
-		.field("windowing_fn", &"omitted")
-		.field("cur_transform", &self.cur_transform)
-		.field("cur_signal", &self.cur_signal)
-		.field("frequency_bins", &self.frequency_bins)
-		.field("coefficients", &self.coefficients)
-		.finish()
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
-	GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
+	GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	#[allow(clippy::cast_precision_loss)]
 	pub fn new(
 		mut frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
-		windowing_fn: Windowing,
+		windowing_fn: &impl WindowingFn,
 	) -> Self {
 		frequency_bins.sort_unstable();
 		Self {
@@ -50,7 +35,13 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: Windo
 			cur_transform: vec![Harmonic::default(); frequency_bins.len()],
 			cur_signal: vec![0.; SAMPLES_PER_WINDOW],
 			frequency_bins,
-			windowing_fn,
+			windowing_values: (0..SAMPLES_PER_WINDOW)
+				.map(|i| windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW))
+				.collect(),
+			// Normalization also applies here.
+			// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
+			#[allow(clippy::cast_precision_loss)]
+			normalization_factor: 1.0 / (SAMPLES_PER_WINDOW as f32).sqrt(),
 		}
 	}
 
@@ -69,13 +60,13 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: Windo
 			"signal with incompatible length received"
 		);
 
-		// Normalization also applies here.
-		// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
-		#[allow(clippy::cast_precision_loss)]
-		let normalization_factor = 1.0 / (samples as f32).sqrt();
-
-		for (i, (dst, sample)) in self.cur_signal.iter_mut().zip(signal).enumerate() {
-			*dst = sample * self.windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW);
+		for ((dst, sample), windowing_value) in self
+			.cur_signal
+			.iter_mut()
+			.zip(signal)
+			.zip(self.windowing_values.iter())
+		{
+			*dst = sample * windowing_value;
 		}
 
 		for ((&bin, coeff), bin_point) in self
@@ -94,7 +85,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: Windo
 			}
 
 			*bin_point = Harmonic::new(
-				Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * normalization_factor,
+				Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * self.normalization_factor,
 				bin,
 			);
 		}

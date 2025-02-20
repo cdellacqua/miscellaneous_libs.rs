@@ -10,40 +10,47 @@ use crate::analysis::{
 };
 
 #[derive(Clone)]
-pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing> {
-	windowing_fn: Windowing,
+pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
+	windowing_values: Vec<f32>,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex32>,
 	cur_transform_bins: Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
+	normalization_factor: f32,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
-	std::fmt::Debug for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
+	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(&format!(
 			"StftAnalyzer<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
 		))
-		.field("windowing_fn", &"omitted")
+		.field("windowing_values", &self.windowing_values)
 		.field("fft_processor", &"omitted")
 		.field("complex_signal", &self.complex_signal)
 		.field("cur_transform_bins", &self.cur_transform_bins)
+		.field("normalization_factor", &self.normalization_factor)
 		.finish()
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
-	StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
+	StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	#[must_use]
-	pub fn new(windowing_fn: Windowing) -> Self {
+	pub fn new(windowing_fn: &impl WindowingFn) -> Self {
 		let mut planner = FftPlanner::new();
 		let transform_size = n_of_frequency_bins(SAMPLES_PER_WINDOW);
 		Self {
-			windowing_fn,
+			windowing_values: (0..SAMPLES_PER_WINDOW)
+				.map(|i| windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW))
+				.collect(),
 			fft_processor: planner.plan_fft_forward(SAMPLES_PER_WINDOW),
 			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
 			cur_transform_bins: vec![Harmonic::default(); transform_size],
+			// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
+			#[allow(clippy::cast_precision_loss)]
+			normalization_factor: 1.0 / (SAMPLES_PER_WINDOW as f32).sqrt(),
 		}
 	}
 
@@ -64,18 +71,16 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: Windo
 			"signal with incompatible length received"
 		);
 
-		for (i, (c, sample)) in self.complex_signal.iter_mut().zip(signal).enumerate() {
-			*c = Complex::new(
-				sample * self.windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW),
-				0.0,
-			);
+		for ((c, sample), windowing_value) in self
+			.complex_signal
+			.iter_mut()
+			.zip(signal)
+			.zip(self.windowing_values.iter())
+		{
+			*c = Complex::new(sample * windowing_value, 0.0);
 		}
 
 		self.fft_processor.process(&mut self.complex_signal);
-
-		// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
-		#[allow(clippy::cast_precision_loss)]
-		let normalization_factor = 1.0 / (samples as f32).sqrt();
 
 		let transform_size = self.cur_transform_bins.len();
 		self.cur_transform_bins
@@ -83,7 +88,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: Windo
 			.zip(self.complex_signal.iter().take(transform_size))
 			.enumerate()
 			.for_each(|(i, (dst, src))| {
-				*dst = Harmonic::new(src * normalization_factor, FrequencyBin::new(i));
+				*dst = Harmonic::new(src * self.normalization_factor, FrequencyBin::new(i));
 			});
 
 		&self.cur_transform_bins
@@ -101,10 +106,10 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: Windo
 }
 
 impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
-	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, HannWindow>
+	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	fn default() -> Self {
-		Self::new(HannWindow)
+		Self::new(&HannWindow)
 	}
 }
 
@@ -121,7 +126,7 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES: usize = 44100;
 
-		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES, _>::default();
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
 		let bins = all_frequency_bins(SAMPLE_RATE, SAMPLES);
 		let delta_hz = bins[1].frequency() - bins[0].frequency();
 
