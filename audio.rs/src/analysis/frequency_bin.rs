@@ -27,7 +27,7 @@ pub fn all_frequency_bins(sample_rate: usize, samples: usize) -> Vec<DynFrequenc
 /// When samples == sample rate, the range includes all the indices that correspond to
 /// the frequencies between 0 and the Nyquist frequency.
 #[must_use]
-pub fn n_of_frequency_bins(samples: usize) -> usize {
+pub const fn n_of_frequency_bins(samples: usize) -> usize {
 	samples / 2 + 1
 }
 

@@ -56,7 +56,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze_bins(
+	pub fn analyze(
 		&mut self,
 		signal: &[f32],
 	) -> &Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
@@ -134,7 +134,7 @@ mod tests {
 
 			let signal =
 				frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[bins[10].frequency() + delta]);
-			let analysis = stft_analyzer.analyze_bins(signal.as_mono());
+			let analysis = stft_analyzer.analyze(signal.as_mono());
 			assert!(
 				(analysis
 					.iter()

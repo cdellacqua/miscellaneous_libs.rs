@@ -45,12 +45,12 @@ mod tests {
 		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES> = StftAnalyzer::new(HannWindow::new());
 
 		let stft_result = stft
-			.analyze_bins(signal)
+			.analyze(signal)
 			.iter()
 			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap();
 		let goertzel_result = goertzel
-			.analyze_bins(signal)
+			.analyze(signal)
 			.iter()
 			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap();
