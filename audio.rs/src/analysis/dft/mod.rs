@@ -28,7 +28,7 @@ mod tests {
 
 		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
 		let signal = signal.as_mono();
-		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES> = GoertzelAnalyzer::new(
+		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES, _> = GoertzelAnalyzer::new(
 			vec![
 				frequency_bin - 20,
 				frequency_bin - 15,
@@ -42,7 +42,7 @@ mod tests {
 			],
 			HannWindow::new(),
 		);
-		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES> = StftAnalyzer::new(HannWindow::new());
+		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES, _> = StftAnalyzer::new(HannWindow::new());
 
 		let stft_result = stft
 			.analyze(signal)

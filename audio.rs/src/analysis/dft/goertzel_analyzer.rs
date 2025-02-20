@@ -1,20 +1,20 @@
-use std::{f32::consts::TAU, sync::Arc};
+use std::f32::consts::TAU;
 
 use rustfft::num_complex::Complex32;
 
 use crate::analysis::{FrequencyBin, Harmonic, WindowingFn};
 
 #[derive(Clone)]
-pub struct GoertzelAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
-	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
+pub struct GoertzelAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing> {
+	windowing_fn: Windowing,
 	cur_transform: Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	cur_signal: Vec<f32>,
 	frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	coefficients: Vec<(f32, Complex32)>,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
-	for GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
+	std::fmt::Debug for GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(&format!(
@@ -29,13 +29,13 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
-	GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
+	GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
 {
 	#[allow(clippy::cast_precision_loss)]
 	pub fn new(
 		mut frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
-		windowing_fn: impl WindowingFn + Send + Sync + 'static,
+		windowing_fn: Windowing,
 	) -> Self {
 		frequency_bins.sort_unstable();
 		Self {
@@ -50,7 +50,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			cur_transform: vec![Harmonic::default(); frequency_bins.len()],
 			cur_signal: vec![0.; SAMPLES_PER_WINDOW],
 			frequency_bins,
-			windowing_fn: Arc::new(windowing_fn),
+			windowing_fn,
 		}
 	}
 
@@ -75,7 +75,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 		let normalization_factor = 1.0 / (samples as f32).sqrt();
 
 		for (i, (dst, sample)) in self.cur_signal.iter_mut().zip(signal).enumerate() {
-			*dst = sample * (self.windowing_fn).ratio_at(i, SAMPLES_PER_WINDOW);
+			*dst = sample * self.windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW);
 		}
 
 		for ((&bin, coeff), bin_point) in self
@@ -87,7 +87,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			let mut z1 = 0.0;
 			let mut z2 = 0.0;
 
-			for sample in &self.cur_signal {
+			for &sample in &self.cur_signal {
 				let z0 = sample + coeff.0 * z1 - z2;
 				z2 = z1;
 				z1 = z0;

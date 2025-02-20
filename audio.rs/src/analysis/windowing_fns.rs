@@ -33,6 +33,7 @@ impl IdentityWindow {
 }
 
 impl WindowingFn for HannWindow {
+	#[inline]
 	fn ratio_at(&self, sample_idx: usize, n_of_samples: usize) -> f32 {
 		#[allow(clippy::cast_precision_loss)]
 		return 0.5 * (1. - f32::cos((TAU * (sample_idx as f32)) / (n_of_samples - 1) as f32));
@@ -40,6 +41,7 @@ impl WindowingFn for HannWindow {
 }
 
 impl WindowingFn for RectangleWindow {
+	#[inline]
 	fn ratio_at(&self, sample_idx: usize, n_of_samples: usize) -> f32 {
 		let rect_width = self.rect_width.min(n_of_samples);
 
@@ -54,6 +56,7 @@ impl WindowingFn for RectangleWindow {
 }
 
 impl WindowingFn for IdentityWindow {
+	#[inline]
 	fn ratio_at(&self, _sample_idx: usize, _n_of_samples: usize) -> f32 {
 		1.
 	}

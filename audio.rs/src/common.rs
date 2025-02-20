@@ -1,8 +1,3 @@
-use cpal::{
-	traits::{DeviceTrait, HostTrait},
-	Device, SampleFormat, SampleRate, SupportedStreamConfig,
-};
-
 #[derive(Debug, Clone)]
 pub enum AudioStreamSamplingState {
 	Sampling,
@@ -37,6 +32,15 @@ pub enum IOMode {
 	Output,
 }
 
+#[cfg(feature = "output")]
+#[cfg(feature = "input")]
+use cpal::{
+	traits::{DeviceTrait, HostTrait},
+	Device, SampleFormat, SampleRate, SupportedStreamConfig,
+};
+
+#[cfg(feature = "output")]
+#[cfg(feature = "input")]
 pub(crate) fn device_provider(
 	device_name: Option<&str>,
 	mode: IOMode,

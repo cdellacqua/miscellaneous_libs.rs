@@ -10,15 +10,15 @@ use crate::analysis::{
 };
 
 #[derive(Clone)]
-pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
-	windowing_fn: Arc<dyn WindowingFn + Sync + Send + 'static>,
+pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing> {
+	windowing_fn: Windowing,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex32>,
 	cur_transform_bins: Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
-	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
+	std::fmt::Debug for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct(&format!(
@@ -32,15 +32,15 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> std::fmt::Debug
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
-	StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize, Windowing: WindowingFn>
+	StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, Windowing>
 {
 	#[must_use]
-	pub fn new(windowing_fn: impl WindowingFn + Send + Sync + 'static) -> Self {
+	pub fn new(windowing_fn: Windowing) -> Self {
 		let mut planner = FftPlanner::new();
 		let transform_size = n_of_frequency_bins(SAMPLES_PER_WINDOW);
 		Self {
-			windowing_fn: Arc::new(windowing_fn),
+			windowing_fn,
 			fft_processor: planner.plan_fft_forward(SAMPLES_PER_WINDOW),
 			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
 			cur_transform_bins: vec![Harmonic::default(); transform_size],
@@ -66,7 +66,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 
 		for (i, (c, sample)) in self.complex_signal.iter_mut().zip(signal).enumerate() {
 			*c = Complex::new(
-				sample * (self.windowing_fn).ratio_at(i, SAMPLES_PER_WINDOW),
+				sample * self.windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW),
 				0.0,
 			);
 		}
@@ -101,7 +101,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 }
 
 impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
-	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
+	for StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW, HannWindow>
 {
 	fn default() -> Self {
 		Self::new(HannWindow)
@@ -121,7 +121,7 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES: usize = 44100;
 
-		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES, _>::default();
 		let bins = all_frequency_bins(SAMPLE_RATE, SAMPLES);
 		let delta_hz = bins[1].frequency() - bins[0].frequency();
 
