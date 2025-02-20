@@ -56,10 +56,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze(
-		&mut self,
-		signal: &[f32],
-	) -> &Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
+	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
 		let samples = signal.len();
 
 		assert_eq!(

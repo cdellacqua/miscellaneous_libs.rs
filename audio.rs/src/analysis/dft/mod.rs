@@ -56,7 +56,8 @@ mod tests {
 			.unwrap();
 
 		assert_eq!(
-			stft_result.bin_idx(), goertzel_result.bin_idx(),
+			stft_result.bin_idx(),
+			goertzel_result.bin_idx(),
 			"goertzel and stft should yield the same frequency result"
 		);
 		assert!(
