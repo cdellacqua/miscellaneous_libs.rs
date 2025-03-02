@@ -32,15 +32,13 @@ pub enum IOMode {
 	Output,
 }
 
-#[cfg(feature = "output")]
-#[cfg(feature = "input")]
+#[cfg(any(feature = "output", feature = "input"))]
 use cpal::{
 	traits::{DeviceTrait, HostTrait},
 	Device, SampleFormat, SampleRate, SupportedStreamConfig,
 };
 
-#[cfg(feature = "output")]
-#[cfg(feature = "input")]
+#[cfg(any(feature = "output", feature = "input"))]
 pub(crate) fn device_provider(
 	device_name: Option<&str>,
 	mode: IOMode,
