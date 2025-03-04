@@ -11,8 +11,31 @@ pub const fn frequency_to_bin_idx(sample_rate: usize, samples: usize, frequency:
 
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
+pub const fn frequency_gap(sample_rate: usize, samples: usize) -> f32 {
+	sample_rate as f32 / samples as f32
+}
+
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
 pub const fn bin_idx_to_frequency(sample_rate: usize, samples: usize, bin_idx: usize) -> f32 {
-	bin_idx as f32 * sample_rate as f32 / samples as f32
+	bin_idx as f32 * frequency_gap(sample_rate, samples)
+}
+
+#[must_use]
+pub const fn frequency_interval(sample_rate: usize, samples: usize, bin_idx: usize) -> (f32, f32) {
+	let gap = frequency_gap(sample_rate, samples);
+	let n_bins = n_of_frequency_bins(samples);
+	match bin_idx {
+		0 => (0., gap / 2.0),
+		_ if bin_idx == n_bins - 1 => {
+			let mid = bin_idx_to_frequency(sample_rate, samples, bin_idx);
+			(mid - gap / 2., mid)
+		}
+		_ => {
+			let mid = bin_idx_to_frequency(sample_rate, samples, bin_idx);
+			(mid - gap / 2., mid + gap / 2.)
+		}
+	}
 }
 
 #[must_use]
@@ -69,6 +92,11 @@ impl DynFrequencyBin {
 	}
 
 	#[must_use]
+	pub fn frequency_interval(&self) -> (f32, f32) {
+		frequency_interval(self.sample_rate, self.samples, self.bin_idx)
+	}
+
+	#[must_use]
 	pub fn bin_idx(&self) -> usize {
 		self.bin_idx
 	}
@@ -93,6 +121,11 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> FrequencyBin<SAMPLE_RATE, S
 	#[must_use]
 	pub const fn frequency(&self) -> f32 {
 		bin_idx_to_frequency(SAMPLE_RATE, SAMPLES, self.bin_idx)
+	}
+
+	#[must_use]
+	pub fn frequency_interval(&self) -> (f32, f32) {
+		frequency_interval(SAMPLE_RATE, SAMPLES, self.bin_idx)
 	}
 
 	#[must_use]
@@ -202,5 +235,66 @@ mod tests {
 				assert!(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(i).bin_idx() < samples);
 			}
 		}
+	}
+
+	#[test]
+	#[allow(clippy::cast_precision_loss)]
+	fn frequency_interval() {
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES: usize = 4410;
+		let expected_gap = 10.;
+
+		assert!(
+			(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(0).frequency()
+				- FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(1).frequency())
+			.abs() <= expected_gap
+		);
+
+		assert!(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(0).frequency() <= f32::EPSILON);
+		assert!(
+			(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(n_of_frequency_bins(SAMPLES) - 1)
+				.frequency() - (SAMPLE_RATE as f32) / 2.)
+				<= f32::EPSILON
+		);
+
+		assert!(
+			FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(0)
+				.frequency_interval()
+				.0 <= f32::EPSILON
+		);
+		assert!(
+			(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(0)
+				.frequency_interval()
+				.1 - expected_gap / 2.)
+				<= f32::EPSILON,
+		);
+
+		assert!(
+			FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(1)
+				.frequency_interval()
+				.0 - expected_gap / 2.
+				<= f32::EPSILON
+		);
+		assert!(
+			(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(1)
+				.frequency_interval()
+				.1 - expected_gap
+				- expected_gap / 2.)
+				<= f32::EPSILON,
+		);
+
+		assert!(
+			(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(n_of_frequency_bins(SAMPLES) - 1)
+				.frequency_interval()
+				.0 + expected_gap / 2.
+				- (SAMPLE_RATE as f32) / 2.)
+				<= f32::EPSILON
+		);
+		assert!(
+			(FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(n_of_frequency_bins(SAMPLES) - 1)
+				.frequency_interval()
+				.1 - (SAMPLE_RATE as f32) / 2.)
+				<= f32::EPSILON,
+		);
 	}
 }
