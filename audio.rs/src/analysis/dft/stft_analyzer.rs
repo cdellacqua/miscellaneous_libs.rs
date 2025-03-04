@@ -116,6 +116,8 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
 #[cfg(test)]
 #[cfg(feature = "output")]
 mod tests {
+	use math_utils::one_dimensional_mapping::MapRatio;
+
 	use crate::{analysis::all_frequency_bins, output::frequencies_to_samples};
 
 	use super::*;
@@ -130,12 +132,13 @@ mod tests {
 		let bins = all_frequency_bins(SAMPLE_RATE, SAMPLES);
 		let delta_hz = bins[1].frequency() - bins[0].frequency();
 
-		// +/-49%
-		for i in -49..=49 {
-			let delta = delta_hz * (i as f32) / 100.0;
+		for i in 0..100 {
+			let frequency = (i as f32 / 100.0).map_ratio((
+				bins[10].frequency() - delta_hz / 2.,
+				bins[10].frequency() + delta_hz / 2.,
+			));
 
-			let signal =
-				frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[bins[10].frequency() + delta]);
+			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
 			let analysis = stft_analyzer.analyze(signal.as_mono());
 			assert!(
 				(analysis
@@ -144,7 +147,7 @@ mod tests {
 					.unwrap()
 					.frequency() - bins[10].frequency())
 				.abs() < f32::EPSILON,
-				"{delta}"
+				"{frequency}"
 			);
 		}
 	}

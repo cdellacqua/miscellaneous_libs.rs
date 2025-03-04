@@ -103,3 +103,42 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 		SAMPLES_PER_WINDOW
 	}
 }
+
+#[cfg(test)]
+#[cfg(feature = "output")]
+mod tests {
+	use super::*;
+	use crate::{analysis::windowing_fns::HannWindow, output::frequencies_to_samples};
+	use math_utils::one_dimensional_mapping::MapRatio;
+
+	#[test]
+	#[allow(clippy::cast_precision_loss)]
+	fn goertzel_peaks_at_frequency_bin() {
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES: usize = 4410;
+
+		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(50);
+
+		let mut stft_analyzer = GoertzelAnalyzer::<SAMPLE_RATE, SAMPLES>::new(
+			vec![bin - 2, bin - 1, bin, bin + 1, bin + 2],
+			&HannWindow,
+		);
+
+		for i in 0..100 {
+			let frequency = (i as f32 / 100.).map_ratio(bin.frequency_interval());
+
+			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
+			let analysis = stft_analyzer.analyze(signal.as_mono());
+			assert!(
+				(analysis
+					.iter()
+					.max_by(|a, b| a.power().total_cmp(&b.power()))
+					.unwrap()
+					.frequency() - bin.frequency())
+				.abs() < f32::EPSILON,
+				"{frequency} {:?}",
+				bin.frequency_interval()
+			);
+		}
+	}
+}
