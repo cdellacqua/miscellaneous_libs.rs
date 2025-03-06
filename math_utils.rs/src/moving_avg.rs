@@ -33,7 +33,7 @@ impl<T: Add<T, Output = T> + DivisibleByUsize + Default + Copy> MovingAverage<T>
 				.copied()
 				.reduce(|acc, cur| acc + cur)
 				.expect("internal error: at least one element in the series");
-			sum.div(self.series.len())
+			sum.div_usize(self.series.len())
 		}
 	}
 }

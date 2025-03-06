@@ -26,7 +26,7 @@ mod tests {
 		let frequency = 440.;
 		let frequency_bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::from_frequency(frequency);
 
-		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
+		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
 		let signal = signal.as_mono();
 		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES> = GoertzelAnalyzer::new(
 			vec![

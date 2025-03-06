@@ -34,13 +34,18 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPL
 	}
 
 	#[must_use]
-	pub const fn frequency(&self) -> f32 {
+	pub fn frequency(&self) -> f32 {
 		self.frequency_bin.frequency()
 	}
 
 	#[must_use]
 	pub const fn bin_idx(&self) -> usize {
 		self.frequency_bin.bin_idx()
+	}
+
+	#[must_use]
+	pub const fn frequency_bin(&self) -> FrequencyBin<SAMPLE_RATE, SAMPLES> {
+		self.frequency_bin
 	}
 
 	#[must_use]

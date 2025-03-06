@@ -138,7 +138,7 @@ mod tests {
 				bins[10].frequency() + delta_hz / 2.,
 			));
 
-			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
+			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
 			let analysis = stft_analyzer.analyze(signal.as_mono());
 			assert!(
 				(analysis
@@ -147,8 +147,27 @@ mod tests {
 					.unwrap()
 					.frequency() - bins[10].frequency())
 				.abs() < f32::EPSILON,
-				"{frequency}"
+				"{frequency} {}", bins[10].frequency()
 			);
 		}
+	}
+
+	#[test]
+	#[allow(clippy::cast_precision_loss)]
+	fn stft_peaks_at_frequency_bin_440() {
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES: usize = 100;
+
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
+		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[440.], 0.);
+		let analysis = stft_analyzer.analyze(signal.as_mono());
+		assert_eq!(
+			analysis
+				.iter()
+				.max_by(|a, b| a.power().total_cmp(&b.power()))
+				.unwrap()
+				.bin_idx(),
+			1
+		);
 	}
 }

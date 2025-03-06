@@ -3,25 +3,51 @@
 
 use std::time::Duration;
 
+pub trait MultiplyByUsize {
+	#[must_use]
+	fn mul_usize(self, rhs: usize) -> Self;
+}
+
+macro_rules! impl_mul_for_float {
+	($t:ty) => {
+		impl MultiplyByUsize for $t {
+			fn mul_usize(self, rhs: usize) -> Self {
+				self * rhs as Self
+			}
+		}
+	};
+	($t:ty, $($others:ty),+) => {
+		impl_mul_for_float!($t);
+		impl_mul_for_float!($($others),+);
+	};
+}
+
+impl_mul_for_float!(f32, f64);
+
 pub trait DivisibleByUsize {
 	#[must_use]
-	fn div(self, rhs: usize) -> Self;
+	fn div_usize(self, rhs: usize) -> Self;
 }
 
-impl DivisibleByUsize for f32 {
-	fn div(self, rhs: usize) -> f32 {
-		self / rhs as f32
-	}
+macro_rules! impl_div_for_float {
+	($t:ty) => {
+		impl DivisibleByUsize for $t {
+			fn div_usize(self, rhs: usize) -> Self {
+				self / rhs as Self
+			}
+		}
+	};
+	($t:ty, $($others:ty),+) => {
+		impl_div_for_float!($t);
+		impl_div_for_float!($($others),+);
+	};
 }
 
-impl DivisibleByUsize for f64 {
-	fn div(self, rhs: usize) -> f64 {
-		self / rhs as f64
-	}
-}
+impl_div_for_float!(f32, f64);
+
 
 impl DivisibleByUsize for Duration {
-	fn div(self, rhs: usize) -> Duration {
+	fn div_usize(self, rhs: usize) -> Duration {
 		self / rhs as u32
 	}
 }
@@ -58,3 +84,47 @@ macro_rules! impl_avg_for_integer {
 }
 
 impl_avg_for_integer!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize);
+
+pub trait RoundToUsize {
+	#[must_use]
+	fn round_usize(self) -> usize;
+}
+
+macro_rules! impl_round_for_float {
+	($t:ty) => {
+		#[allow(clippy::cast_sign_loss)]
+		impl RoundToUsize for $t {
+			fn round_usize(self) -> usize {
+				(self + 0.5) as usize
+			}
+		}
+	};
+	($t:ty, $($others:ty),+) => {
+		impl_round_for_float!($t);
+		impl_round_for_float!($($others),+);
+	};
+}
+
+impl_round_for_float!(f32, f64);
+
+pub trait TruncToUsize {
+	#[must_use]
+	fn trunc_usize(self) -> usize;
+}
+
+macro_rules! impl_trunc_for_float {
+	($t:ty) => {
+		#[allow(clippy::cast_sign_loss)]
+		impl TruncToUsize for $t {
+			fn trunc_usize(self) -> usize {
+				self as usize
+			}
+		}
+	};
+	($t:ty, $($others:ty),+) => {
+		impl_trunc_for_float!($t);
+		impl_trunc_for_float!($($others),+);
+	};
+}
+
+impl_trunc_for_float!(f32, f64);

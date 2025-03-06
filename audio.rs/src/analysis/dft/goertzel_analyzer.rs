@@ -127,7 +127,7 @@ mod tests {
 		for i in 0..100 {
 			let frequency = (i as f32 / 100.).map_ratio(bin.frequency_interval());
 
-			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency]);
+			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
 			let analysis = stft_analyzer.analyze(signal.as_mono());
 			assert!(
 				(analysis
@@ -136,8 +136,8 @@ mod tests {
 					.unwrap()
 					.frequency() - bin.frequency())
 				.abs() < f32::EPSILON,
-				"{frequency} {:?}",
-				bin.frequency_interval()
+				"{frequency} {}",
+				bin.frequency()
 			);
 		}
 	}

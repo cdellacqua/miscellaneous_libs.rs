@@ -5,22 +5,21 @@
 #![allow(clippy::cast_possible_wrap)]
 
 #[must_use]
+#[allow(clippy::cast_sign_loss)]
+#[inline]
 pub const fn round_f32_to_usize(val: f32) -> usize {
-	assert!(val.is_sign_positive(), "expected positive val");
-	#[allow(clippy::cast_sign_loss)]
-	let scaled_up = (val * 10.) as usize;
-	scaled_up / 10 + if (scaled_up % 10) >= 5 { 1 } else { 0 }
+	(val + 0.5) as usize
 }
 
 #[must_use]
+#[allow(clippy::cast_sign_loss)]
+#[inline]
 pub const fn round_f64_to_usize(val: f64) -> usize {
-	assert!(val.is_sign_positive(), "expected positive val");
-	#[allow(clippy::cast_sign_loss)]
-	let scaled_up = (val * 10.) as usize;
-	scaled_up / 10 + if (scaled_up % 10) >= 5 { 1 } else { 0 }
+	(val + 0.5) as usize
 }
 
 #[must_use]
+#[inline]
 pub const fn round_f32_to_isize(val: f32) -> isize {
 	if val < 0. {
 		-(round_f32_to_usize(-val) as isize)

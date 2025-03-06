@@ -83,7 +83,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	) -> Self {
 		let shared: Arc<RwLock<OscillatorShared<SAMPLE_RATE, N_CH>>> =
 			Arc::new(RwLock::new(OscillatorShared {
-				signal: frequencies_to_samples(SAMPLE_RATE, &frequencies).multiply(),
+				signal: frequencies_to_samples(SAMPLE_RATE, &frequencies, 0.).multiply(),
 				frequencies,
 				mute,
 			}));
@@ -157,7 +157,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	pub fn set_frequencies(&mut self, frequencies: &[f32]) {
 		let mut shared = self.shared.write().unwrap();
 		shared.frequencies = frequencies.to_vec();
-		shared.signal = frequencies_to_samples(SAMPLE_RATE, frequencies).multiply();
+		shared.signal = frequencies_to_samples(SAMPLE_RATE, frequencies, 0.).multiply();
 	}
 
 	/// # Panics
@@ -195,13 +195,14 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 	samples: usize,
 	frequencies: &[f32],
+	phase: f32,
 ) -> InterleavedAudioBuffer<SAMPLE_RATE, 1, Vec<f32>> {
 	let mut mono = (0..samples)
 		.map(move |i| {
 			#[allow(clippy::cast_precision_loss)]
 			frequencies
 				.iter()
-				.map(|f| f32::sin(TAU * f * (i as f32 / SAMPLE_RATE as f32)))
+				.map(|f| f32::sin(phase + TAU * f * (i as f32 / SAMPLE_RATE as f32)))
 				.sum::<f32>()
 		})
 		.collect::<Vec<f32>>();
@@ -243,7 +244,7 @@ mod tests {
 
 	#[test]
 	fn test_frequencies_to_samples() {
-		let samples = frequencies_to_samples::<44100>(100, &[440.]);
+		let samples = frequencies_to_samples::<44100>(100, &[440.], 0.);
 		assert!(samples.as_mono()[0] < f32::EPSILON);
 		assert!(samples.as_mono()[1] > 0.0);
 	}

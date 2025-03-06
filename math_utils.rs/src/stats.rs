@@ -63,7 +63,7 @@ impl<T: Add<T, Output = T> + DivisibleByUsize + Copy, Series: Borrow<[T]>>
 		let sum = self.sum();
 		*self.mean.borrow_mut().get_or_insert_with(|| {
 			let series = self.series.borrow();
-			sum.div(series.len())
+			sum.div_usize(series.len())
 		})
 	}
 }
@@ -99,7 +99,7 @@ impl<T: PartialOrd + Add<T, Output = T> + DivisibleByUsize + Copy, Series: Borro
 {
 	#[must_use]
 	pub fn mid_range(&self) -> T {
-		(self.max() + self.min()).div(2)
+		(self.max() + self.min()).div_usize(2)
 	}
 
 	#[must_use]
@@ -107,7 +107,7 @@ impl<T: PartialOrd + Add<T, Output = T> + DivisibleByUsize + Copy, Series: Borro
 		let series = self.series.borrow();
 		let len = series.len();
 		if len.is_even() {
-			(series[len / 2 - 1] + series[len / 2]).div(2)
+			(series[len / 2 - 1] + series[len / 2]).div_usize(2)
 		} else {
 			series[len / 2]
 		}
@@ -133,7 +133,7 @@ impl<
 				})
 				.reduce(|acc, cur| acc + cur)
 				.expect("internal error: at least one element should be present in the series")
-				.div(series.len())
+				.div_usize(series.len())
 		})
 	}
 }

@@ -5,3 +5,4 @@ pub mod ext;
 pub mod moving_avg;
 pub mod one_dimensional_mapping;
 pub mod stats;
+pub mod discrete_interval;
