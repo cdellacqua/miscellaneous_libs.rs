@@ -116,6 +116,8 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
 #[cfg(test)]
 #[cfg(feature = "output")]
 mod tests {
+	use std::f32::consts::PI;
+
 	use math_utils::one_dimensional_mapping::MapRatio;
 
 	use crate::{analysis::all_frequency_bins, output::frequencies_to_samples};
@@ -147,7 +149,8 @@ mod tests {
 					.unwrap()
 					.frequency() - bins[10].frequency())
 				.abs() < f32::EPSILON,
-				"{frequency} {}", bins[10].frequency()
+				"{frequency} {}",
+				bins[10].frequency()
 			);
 		}
 	}
@@ -169,5 +172,27 @@ mod tests {
 				.bin_idx(),
 			1
 		);
+	}
+
+	#[test]
+	#[allow(clippy::cast_precision_loss)]
+	fn stft_phase() {
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES: usize = 4410;
+
+		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(50);
+
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
+
+		let frequency = bin.frequency();
+
+		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
+		let analysis = stft_analyzer.analyze(signal.as_mono());
+		let phase = analysis
+			.iter()
+			.max_by(|a, b| a.power().total_cmp(&b.power()))
+			.unwrap()
+			.phase();
+		assert!((phase + PI / 2.).abs() < 0.001, "{phase}");
 	}
 }

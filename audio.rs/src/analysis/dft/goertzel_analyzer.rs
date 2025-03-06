@@ -107,6 +107,8 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 #[cfg(test)]
 #[cfg(feature = "output")]
 mod tests {
+	use std::f32::consts::PI;
+
 	use super::*;
 	use crate::{analysis::windowing_fns::HannWindow, output::frequencies_to_samples};
 	use math_utils::one_dimensional_mapping::MapRatio;
@@ -140,5 +142,30 @@ mod tests {
 				bin.frequency()
 			);
 		}
+	}
+
+	#[test]
+	#[allow(clippy::cast_precision_loss)]
+	fn goertzel_phase() {
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES: usize = 4410;
+
+		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(50);
+
+		let mut stft_analyzer = GoertzelAnalyzer::<SAMPLE_RATE, SAMPLES>::new(
+			vec![bin - 2, bin - 1, bin, bin + 1, bin + 2],
+			&HannWindow,
+		);
+
+		let frequency = bin.frequency();
+
+		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
+		let analysis = stft_analyzer.analyze(signal.as_mono());
+		let phase = analysis
+			.iter()
+			.max_by(|a, b| a.power().total_cmp(&b.power()))
+			.unwrap()
+			.phase();
+		assert!((phase + PI / 2.).abs() < 0.001, "{phase}");
 	}
 }
