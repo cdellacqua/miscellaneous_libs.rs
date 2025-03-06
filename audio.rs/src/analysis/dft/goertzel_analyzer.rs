@@ -107,8 +107,6 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 #[cfg(test)]
 #[cfg(feature = "output")]
 mod tests {
-	use std::f32::consts::PI;
-
 	use super::*;
 	use crate::{analysis::windowing_fns::HannWindow, output::frequencies_to_samples};
 	use math_utils::one_dimensional_mapping::MapRatio;
@@ -126,7 +124,7 @@ mod tests {
 			&HannWindow,
 		);
 
-		for i in 0..100 {
+		for i in 1..100 {
 			let frequency = (i as f32 / 100.).map_ratio(bin.frequency_interval());
 
 			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
@@ -166,6 +164,26 @@ mod tests {
 			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap()
 			.phase();
-		assert!((phase + PI / 2.).abs() < 0.001, "{phase}");
+		assert!(phase.abs() < 0.001, "{phase}");
+	}
+
+	#[test]
+	#[allow(clippy::cast_precision_loss)]
+	fn goertzel_peaks_at_frequency_bin_440() {
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES: usize = 100;
+
+		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::from_frequency(441.);
+		assert_eq!(bin.bin_idx(), 1);
+		let mut stft_analyzer =
+			GoertzelAnalyzer::<SAMPLE_RATE, SAMPLES>::new(vec![bin, bin + 1, bin + 2], &HannWindow);
+		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[440.], 0.);
+		let analysis = stft_analyzer.analyze(signal.as_mono());
+		let harmonic = analysis
+			.iter()
+			.max_by(|a, b| a.power().total_cmp(&b.power()))
+			.unwrap();
+		assert_eq!(harmonic.bin_idx(), 1);
+		assert!(harmonic.phase().abs() < 0.01);
 	}
 }

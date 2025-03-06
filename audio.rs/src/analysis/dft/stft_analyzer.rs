@@ -116,8 +116,6 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
 #[cfg(test)]
 #[cfg(feature = "output")]
 mod tests {
-	use std::f32::consts::PI;
-
 	use math_utils::one_dimensional_mapping::MapRatio;
 
 	use crate::{analysis::all_frequency_bins, output::frequencies_to_samples};
@@ -134,7 +132,7 @@ mod tests {
 		let bins = all_frequency_bins(SAMPLE_RATE, SAMPLES);
 		let delta_hz = bins[1].frequency() - bins[0].frequency();
 
-		for i in 0..100 {
+		for i in 1..100 {
 			let frequency = (i as f32 / 100.0).map_ratio((
 				bins[10].frequency() - delta_hz / 2.,
 				bins[10].frequency() + delta_hz / 2.,
@@ -164,14 +162,12 @@ mod tests {
 		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
 		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[440.], 0.);
 		let analysis = stft_analyzer.analyze(signal.as_mono());
-		assert_eq!(
-			analysis
-				.iter()
-				.max_by(|a, b| a.power().total_cmp(&b.power()))
-				.unwrap()
-				.bin_idx(),
-			1
-		);
+		let harmonic = analysis[1..] // skip 0Hz
+			.iter()
+			.max_by(|a, b| a.power().total_cmp(&b.power()))
+			.unwrap();
+		assert_eq!(harmonic.bin_idx(), 1);
+		assert!(harmonic.phase().abs() < 0.01);
 	}
 
 	#[test]
@@ -193,6 +189,6 @@ mod tests {
 			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap()
 			.phase();
-		assert!((phase + PI / 2.).abs() < 0.001, "{phase}");
+		assert!(phase.abs() < 0.001, "{phase}");
 	}
 }

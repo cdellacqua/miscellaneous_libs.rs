@@ -1,11 +1,24 @@
+use std::fmt::Debug;
+
 use rustfft::num_complex::Complex32;
 
 use super::FrequencyBin;
 
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub struct Harmonic<const SAMPLE_RATE: usize, const SAMPLES: usize> {
 	phasor: Complex32,
 	frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>,
+}
+
+impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Debug for Harmonic<SAMPLE_RATE, SAMPLES> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Harmonic")
+			.field("phasor", &self.phasor)
+			.field("frequency_bin", &self.frequency_bin)
+			.field("power()", &self.power())
+			.field("phase()", &self.phase())
+			.finish()
+	}
 }
 
 impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPLES> {
@@ -48,6 +61,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPL
 		self.frequency_bin
 	}
 
+	/// The phase of the harmonic represents the phase offset of a cosine wave (i.e. the real component of a DFT point).
 	#[must_use]
 	pub fn phase(&self) -> f32 {
 		self.phasor.arg()

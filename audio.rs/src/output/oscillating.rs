@@ -191,6 +191,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	}
 }
 
+/// Generate a series of samples computed using a cosine wave with the
+/// specified frequency and phase.
 #[must_use]
 pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 	samples: usize,
@@ -202,7 +204,7 @@ pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 			#[allow(clippy::cast_precision_loss)]
 			frequencies
 				.iter()
-				.map(|f| f32::sin(phase + TAU * f * (i as f32 / SAMPLE_RATE as f32)))
+				.map(|f| f32::cos(phase + TAU * f * (i as f32 / SAMPLE_RATE as f32)))
 				.sum::<f32>()
 		})
 		.collect::<Vec<f32>>();
@@ -245,7 +247,7 @@ mod tests {
 	#[test]
 	fn test_frequencies_to_samples() {
 		let samples = frequencies_to_samples::<44100>(100, &[440.], 0.);
-		assert!(samples.as_mono()[0] < f32::EPSILON);
-		assert!(samples.as_mono()[1] > 0.0);
+		assert!((samples.as_mono()[0] - 1.0).abs() < f32::EPSILON);
+		assert!((samples.as_mono()[1] - 1.0).abs() > f32::EPSILON);
 	}
 }
