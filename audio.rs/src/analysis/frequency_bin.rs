@@ -29,7 +29,7 @@ pub fn dft_frequency_interval(
 
 #[must_use]
 pub fn frequency_to_bin_idx(sample_rate: usize, samples: usize, frequency: f32) -> usize {
-	dft_frequency_interval(sample_rate, samples).value_to_bin_idx(frequency)
+	dft_frequency_interval(sample_rate, samples).value_to_bin(frequency)
 }
 
 #[must_use]

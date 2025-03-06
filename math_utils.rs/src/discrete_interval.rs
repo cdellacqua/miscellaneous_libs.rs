@@ -35,7 +35,7 @@ impl<
 
 	#[must_use]
 	#[allow(clippy::cast_precision_loss)]
-	pub fn value_to_bin_idx(&self, value: T) -> usize {
+	pub fn value_to_bin(&self, value: T) -> usize {
 		debug_assert!(
 			value >= self.interval.0 && value <= self.interval.1,
 			"value {} is out of range {}..={}",
@@ -56,7 +56,7 @@ impl<
 
 	#[must_use]
 	#[allow(clippy::cast_precision_loss)]
-	pub fn bin_idx_to_range_start(&self, bin_idx: usize) -> T {
+	pub fn bin_to_range_start(&self, bin_idx: usize) -> T {
 		debug_assert!(
 			bin_idx < self.n_of_bins,
 			"index {} is out of range. n_of_bins is {}",
@@ -68,7 +68,7 @@ impl<
 
 	#[must_use]
 	#[allow(clippy::cast_precision_loss)]
-	pub fn bin_idx_to_range_end(&self, bin_idx: usize) -> T {
+	pub fn bin_to_range_end(&self, bin_idx: usize) -> T {
 		debug_assert!(
 			bin_idx < self.n_of_bins,
 			"index {} is out of range. n_of_bins is {}",
@@ -81,7 +81,7 @@ impl<
 	#[must_use]
 	pub fn bin_range(&self, bin_idx: usize) -> (T, T) {
 		let gap = self.bin_width();
-		let value = self.bin_idx_to_range_start(bin_idx);
+		let value = self.bin_to_range_start(bin_idx);
 		(value, value + gap)
 	}
 
@@ -89,7 +89,7 @@ impl<
 	pub fn bin_midpoint(&self, bin_idx: usize) -> T {
 		let gap = self.bin_width();
 		let half_gap = gap.div_usize(2);
-		let value = self.bin_idx_to_range_start(bin_idx);
+		let value = self.bin_to_range_start(bin_idx);
 		value + half_gap
 	}
 }
@@ -104,11 +104,11 @@ mod tests {
 		assert_eq!(interval.n_of_bins, 10);
 		assert!((interval.bin_width() - 10.).abs() < f32::EPSILON);
 		assert!(
-			(interval.bin_idx_to_range_start(interval.value_to_bin_idx(100.)) - 90.).abs()
+			(interval.bin_to_range_start(interval.value_to_bin(100.)) - 90.).abs()
 				< f32::EPSILON
 		);
 		assert!(
-			(interval.bin_idx_to_range_end(interval.value_to_bin_idx(100.)) - 100.).abs()
+			(interval.bin_to_range_end(interval.value_to_bin(100.)) - 100.).abs()
 				< f32::EPSILON
 		);
 	}
@@ -118,17 +118,19 @@ mod tests {
 		let interval = DiscreteInterval::new((0f32, 100f32), 10);
 		assert_eq!(interval.n_of_bins, 10);
 		assert!((interval.bin_width() - 10.).abs() < f32::EPSILON);
-		assert_eq!(interval.value_to_bin_idx(0.), 0);
-		assert_eq!(interval.value_to_bin_idx(4.), 0);
-		assert_eq!(interval.value_to_bin_idx(6.), 0);
-		assert_eq!(interval.value_to_bin_idx(9.), 0);
-		assert_eq!(interval.value_to_bin_idx(14.), 1);
-		assert_eq!(interval.value_to_bin_idx(16.), 1);
-		assert_eq!(interval.value_to_bin_idx(85.), 8);
-		assert_eq!(interval.value_to_bin_idx(88.), 8);
-		assert_eq!(interval.value_to_bin_idx(96.), 9);
-		assert_eq!(interval.value_to_bin_idx(99.), 9);
-		assert_eq!(interval.value_to_bin_idx(100.), 9);
+		assert_eq!(interval.value_to_bin(0.), 0);
+		assert_eq!(interval.value_to_bin(4.), 0);
+		assert_eq!(interval.value_to_bin(6.), 0);
+		assert_eq!(interval.value_to_bin(9.), 0);
+		assert_eq!(interval.value_to_bin(14.), 1);
+		assert_eq!(interval.value_to_bin(16.), 1);
+		assert_eq!(interval.value_to_bin(85.), 8);
+		assert_eq!(interval.value_to_bin(88.), 8);
+		assert_eq!(interval.value_to_bin(89.999), 8);
+		assert_eq!(interval.value_to_bin(90.), 9);
+		assert_eq!(interval.value_to_bin(96.), 9);
+		assert_eq!(interval.value_to_bin(99.), 9);
+		assert_eq!(interval.value_to_bin(100.), 9);
 	}
 
 	#[test]
@@ -136,17 +138,17 @@ mod tests {
 		let interval = DiscreteInterval::new((10f32, 110f32), 10);
 		assert_eq!(interval.n_of_bins, 10);
 		assert!((interval.bin_width() - 10.).abs() < f32::EPSILON);
-		assert_eq!(interval.value_to_bin_idx(10. + 0.), 0);
-		assert_eq!(interval.value_to_bin_idx(10. + 4.), 0);
-		assert_eq!(interval.value_to_bin_idx(10. + 6.), 0);
-		assert_eq!(interval.value_to_bin_idx(10. + 9.), 0);
-		assert_eq!(interval.value_to_bin_idx(10. + 14.), 1);
-		assert_eq!(interval.value_to_bin_idx(10. + 16.), 1);
-		assert_eq!(interval.value_to_bin_idx(10. + 85.), 8);
-		assert_eq!(interval.value_to_bin_idx(10. + 88.), 8);
-		assert_eq!(interval.value_to_bin_idx(10. + 96.), 9);
-		assert_eq!(interval.value_to_bin_idx(10. + 99.), 9);
-		assert_eq!(interval.value_to_bin_idx(10. + 100.), 9);
+		assert_eq!(interval.value_to_bin(10. + 0.), 0);
+		assert_eq!(interval.value_to_bin(10. + 4.), 0);
+		assert_eq!(interval.value_to_bin(10. + 6.), 0);
+		assert_eq!(interval.value_to_bin(10. + 9.), 0);
+		assert_eq!(interval.value_to_bin(10. + 14.), 1);
+		assert_eq!(interval.value_to_bin(10. + 16.), 1);
+		assert_eq!(interval.value_to_bin(10. + 85.), 8);
+		assert_eq!(interval.value_to_bin(10. + 88.), 8);
+		assert_eq!(interval.value_to_bin(10. + 96.), 9);
+		assert_eq!(interval.value_to_bin(10. + 99.), 9);
+		assert_eq!(interval.value_to_bin(10. + 100.), 9);
 	}
 
 	#[test]
@@ -154,16 +156,16 @@ mod tests {
 		let interval = DiscreteInterval::new((-10f32, 90f32), 10);
 		assert_eq!(interval.n_of_bins, 10);
 		assert!((interval.bin_width() - 10.).abs() < f32::EPSILON);
-		assert_eq!(interval.value_to_bin_idx(-10. + 0.), 0);
-		assert_eq!(interval.value_to_bin_idx(-10. + 4.), 0);
-		assert_eq!(interval.value_to_bin_idx(-10. + 6.), 0);
-		assert_eq!(interval.value_to_bin_idx(-10. + 9.), 0);
-		assert_eq!(interval.value_to_bin_idx(-10. + 14.), 1);
-		assert_eq!(interval.value_to_bin_idx(-10. + 16.), 1);
-		assert_eq!(interval.value_to_bin_idx(-10. + 85.), 8);
-		assert_eq!(interval.value_to_bin_idx(-10. + 88.), 8);
-		assert_eq!(interval.value_to_bin_idx(-10. + 96.), 9);
-		assert_eq!(interval.value_to_bin_idx(-10. + 99.), 9);
-		assert_eq!(interval.value_to_bin_idx(-10. + 100.), 9);
+		assert_eq!(interval.value_to_bin(-10. + 0.), 0);
+		assert_eq!(interval.value_to_bin(-10. + 4.), 0);
+		assert_eq!(interval.value_to_bin(-10. + 6.), 0);
+		assert_eq!(interval.value_to_bin(-10. + 9.), 0);
+		assert_eq!(interval.value_to_bin(-10. + 14.), 1);
+		assert_eq!(interval.value_to_bin(-10. + 16.), 1);
+		assert_eq!(interval.value_to_bin(-10. + 85.), 8);
+		assert_eq!(interval.value_to_bin(-10. + 88.), 8);
+		assert_eq!(interval.value_to_bin(-10. + 96.), 9);
+		assert_eq!(interval.value_to_bin(-10. + 99.), 9);
+		assert_eq!(interval.value_to_bin(-10. + 100.), 9);
 	}
 }
