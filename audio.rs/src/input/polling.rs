@@ -3,31 +3,31 @@ use std::{
 	time::Duration,
 };
 
-use cpal::{
-	traits::{DeviceTrait, StreamTrait},
-	Device, Stream, SupportedStreamConfig,
-};
-use math_utils::moving_avg::MovingAverage;
 use mutex_ext::LockExt;
-use resource_daemon::ResourceDaemon;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
-	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState, NOfSamples,
+	buffers::InterleavedAudioBuffer,
+	input::{InputStreamBuilder, StreamListener},
+	AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
 };
+
+use super::InputStream;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InputStreamPollerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	n_of_samples: NOfSamples<SAMPLE_RATE>,
+	n_of_frames: NOfFrames<SAMPLE_RATE, N_CH>,
 	device_name: Option<String>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPLE_RATE, N_CH> {
 	#[must_use]
-	pub const fn new(n_of_samples: NOfSamples<SAMPLE_RATE>, device_name: Option<String>) -> Self {
+	pub const fn new(
+		n_of_frames: NOfFrames<SAMPLE_RATE, N_CH>,
+		device_name: Option<String>,
+	) -> Self {
 		Self {
-			n_of_samples,
+			n_of_frames,
 			device_name,
 		}
 	}
@@ -37,109 +37,51 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
 	pub fn build(&self) -> Result<InputStreamPoller<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let (device, config) = device_provider(
-			self.device_name.as_deref(),
-			crate::IOMode::Input,
-			N_CH,
-			SAMPLE_RATE,
-		)?;
+		let shared = Arc::new(Mutex::new({
+			PollerState {
+				buffer: {
+					let mut buf = AllocRingBuffer::new(self.n_of_frames.n_of_samples());
+					buf.fill(0.);
+					buf
+				},
+				collected_samples: self.n_of_frames, // buffer pre-filled with 0.
+			}
+		}));
 
-		Ok(InputStreamPoller::new(self.n_of_samples, device, config))
+		Ok(InputStreamPoller::new(
+			self.n_of_frames,
+			shared.clone(),
+			InputStreamBuilder::new(
+				self.device_name.clone(),
+				Box::new(InputStreamPollerListener::<SAMPLE_RATE, N_CH>::new(shared)),
+			)
+			.build()?,
+		))
 	}
 }
 
-struct PollerState<const SAMPLE_RATE: usize> {
-	buffer: AllocRingBuffer<f32>,
-	collected_samples: NOfSamples<SAMPLE_RATE>,
-	input_delay_moving_avg: MovingAverage<Duration>,
-}
-
 pub struct InputStreamPoller<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<Mutex<PollerState<SAMPLE_RATE>>>,
-	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
-	n_of_samples: NOfSamples<SAMPLE_RATE>,
+	n_of_samples: NOfFrames<SAMPLE_RATE, N_CH>,
+	shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>,
+	base_stream: InputStream<SAMPLE_RATE, N_CH>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE, N_CH> {
 	fn new(
-		n_of_samples: NOfSamples<SAMPLE_RATE>,
-		device: Device,
-		config: SupportedStreamConfig,
+		n_of_samples: NOfFrames<SAMPLE_RATE, N_CH>,
+		shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>,
+		base_stream: InputStream<SAMPLE_RATE, N_CH>,
 	) -> Self {
-		let shared = Arc::new(Mutex::new({
-			PollerState {
-				buffer: {
-					let mut buf = AllocRingBuffer::new(N_CH * n_of_samples.inner());
-					buf.fill(0.);
-					buf
-				},
-				collected_samples: n_of_samples, // buffer pre-filled with 0.
-				input_delay_moving_avg: MovingAverage::new(10),
-			}
-		}));
-
-		let stream_daemon = ResourceDaemon::new({
-			let shared = shared.clone();
-			move |quit_signal| {
-				device
-					.build_input_stream(
-						&config.into(),
-						move |data, info| {
-							let output_buffer_frames =
-								NOfSamples::<SAMPLE_RATE>::new(data.len() / N_CH);
-
-							shared.with_lock_mut(
-								|PollerState {
-								     buffer,
-								     ref mut collected_samples,
-								     ref mut input_delay_moving_avg,
-								 }| {
-									buffer.extend_from_slice(data);
-
-									// assert_eq!(data.len() % N_CH, 0);
-									*collected_samples += output_buffer_frames;
-
-									input_delay_moving_avg.push(
-										info.timestamp()
-											.callback
-											.duration_since(&info.timestamp().capture)
-											.unwrap_or(Duration::ZERO) + output_buffer_frames
-											.to_duration(),
-									);
-								},
-							);
-						},
-						move |err| {
-							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
-						},
-						None,
-					)
-					.map_err(|err| AudioStreamError::BuildFailed(err.to_string()))
-					.and_then(|stream| {
-						stream
-							.play()
-							.map(|()| stream)
-							.map_err(|err| AudioStreamError::StartFailed(err.to_string()))
-					})
-			}
-		});
-
 		Self {
-			shared,
-			stream_daemon,
 			n_of_samples,
+			shared,
+			base_stream,
 		}
 	}
 
 	#[must_use]
 	pub fn state(&self) -> AudioStreamSamplingState {
-		match self.stream_daemon.state() {
-			resource_daemon::DaemonState::Holding => AudioStreamSamplingState::Sampling,
-			resource_daemon::DaemonState::Quitting(reason)
-			| resource_daemon::DaemonState::Quit(reason) => {
-				AudioStreamSamplingState::Stopped(reason.unwrap_or(AudioStreamError::Cancelled))
-			}
-		}
+		self.base_stream.state()
 	}
 
 	/// Get the latest snapshot of the internal buffer
@@ -153,7 +95,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 	#[must_use]
 	pub fn last_n_samples(
 		&self,
-		samples_to_extract: NOfSamples<SAMPLE_RATE>,
+		samples_to_extract: NOfFrames<SAMPLE_RATE, N_CH>,
 	) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
 		self.samples_from_ref(samples_to_extract, None).unwrap().0
 	}
@@ -175,19 +117,19 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 	///
 	/// Example (pseudocode):
 	/// ```rust ignore
-	/// let (beginning, collected_samples) = poller.samples_from_ref(NOfSamples::new(10), None);
+	/// let (beginning, collected_samples) = poller.samples_from_ref(NOfFrames::new(10), None);
 	/// sleep(Duration::from_millis(100)); // assuming poller buffer is big enough to contain ~100ms of samples
-	/// let (end, _) = poller.samples_from_ref(NOfSamples::new(10), Some(collected_samples));
+	/// let (end, _) = poller.samples_from_ref(NOfFrames::new(10), Some(collected_samples));
 	/// assert!(poller.snapshot().has_slice(beginning.concat(end)))
 	/// ```
 	#[must_use]
 	pub fn samples_from_ref(
 		&self,
-		samples_to_extract: NOfSamples<SAMPLE_RATE>,
-		previously_collected_samples: Option<NOfSamples<SAMPLE_RATE>>,
+		samples_to_extract: NOfFrames<SAMPLE_RATE, N_CH>,
+		previously_collected_samples: Option<NOfFrames<SAMPLE_RATE, N_CH>>,
 	) -> Option<(
 		InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
-		NOfSamples<SAMPLE_RATE>,
+		NOfFrames<SAMPLE_RATE, N_CH>,
 	)> {
 		let shared = self.shared.lock().unwrap();
 		let collected_samples = shared.collected_samples;
@@ -214,7 +156,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 
 	/// Number of sampling points, regardless of the number of channels.
 	#[must_use]
-	pub fn n_of_samples(&self) -> NOfSamples<SAMPLE_RATE> {
+	pub fn n_of_samples(&self) -> NOfFrames<SAMPLE_RATE, N_CH> {
 		self.n_of_samples
 	}
 
@@ -230,7 +172,57 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 
 	#[must_use]
 	pub fn avg_input_delay(&self) -> Duration {
-		self.shared
-			.with_lock(|shared| shared.input_delay_moving_avg.avg())
+		todo!()
+	}
+}
+
+struct PollerState<const SAMPLE_RATE: usize, const N_CH: usize> {
+	buffer: AllocRingBuffer<f32>,
+	collected_samples: NOfFrames<SAMPLE_RATE, N_CH>,
+}
+
+struct InputStreamPollerListener<const SAMPLE_RATE: usize, const N_CH: usize> {
+	shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>,
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerListener<SAMPLE_RATE, N_CH> {
+	fn new(shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>) -> Self {
+		Self { shared }
+	}
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamListener<SAMPLE_RATE, N_CH>
+	for InputStreamPollerListener<SAMPLE_RATE, N_CH>
+{
+	fn on_data(&mut self, chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &[f32]>) {
+		self.shared.with_lock_mut(|shared| {
+			shared.buffer.extend_from_slice(chunk.raw_buffer());
+			shared.collected_samples += chunk.n_of_frames();
+		});
+	}
+
+	fn on_error(&mut self, _reason: &str) {
+		// ignored, it will just stop sampling
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use std::{thread::sleep, time::Duration};
+
+	use crate::output::AudioPlayerBuilder;
+
+	use super::*;
+
+	#[test]
+	#[ignore = "manually record and listen to the registered audio file"]
+	fn test_manual() {
+		let poller = InputStreamPollerBuilder::<44100, 2>::new(Duration::from_secs(2).into(), None)
+			.build()
+			.unwrap();
+		sleep(poller.n_of_samples().into());
+		let snapshot = poller.snapshot();
+		let mut player = AudioPlayerBuilder::<44100, 2>::new(None).build().unwrap();
+		player.play(snapshot);
 	}
 }

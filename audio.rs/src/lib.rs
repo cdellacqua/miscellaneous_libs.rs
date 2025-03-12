@@ -12,7 +12,7 @@ pub mod output;
 mod common;
 pub use common::*;
 
-mod n_of_samples;
-pub use n_of_samples::*;
+mod n_of_frames;
+pub use n_of_frames::*;
 
 pub use rustfft::num_complex;

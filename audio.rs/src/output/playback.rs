@@ -1,26 +1,17 @@
 #![allow(clippy::cast_precision_loss)]
 
 use std::{
-	sync::{
-		mpsc::{sync_channel, SyncSender, TryRecvError},
-		Arc, Condvar, Mutex,
-	},
+	sync::{Arc, Condvar, Mutex},
 	thread::sleep,
-	time::Duration,
 };
-
-use cpal::{
-	traits::{DeviceTrait, StreamTrait},
-	Device, Stream, SupportedStreamConfig,
-};
-use resource_daemon::ResourceDaemon;
 
 use mutex_ext::LockExt;
 
 use crate::{
-	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState, NOfSamples,
+	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
 };
+
+use super::{OutputStream, OutputStreamBuilder, StreamProducer};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AudioPlayerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
@@ -38,119 +29,45 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
 	pub fn build(&self) -> Result<AudioPlayer<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let (device, config) = device_provider(
-			self.device_name.as_deref(),
-			crate::IOMode::Output,
-			N_CH,
-			SAMPLE_RATE,
-		)?;
+		let shared = Arc::new((
+			Mutex::new(PlayerState {
+				frame_idx: NOfFrames::new(0),
+				signal: InterleavedAudioBuffer::new(vec![]),
+				end_of_signal: true,
+			}),
+			Condvar::default(),
+		));
 
-		Ok(AudioPlayer::new(device, config))
+		Ok(AudioPlayer::new(
+			shared.clone(),
+			OutputStreamBuilder::new(
+				self.device_name.clone(),
+				Box::new(AudioPlayerProducer::<SAMPLE_RATE, N_CH>::new(shared)),
+			)
+			.build()?,
+		))
 	}
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct PlayingState {
-	is_playing: bool,
-	last_frame_delay: Option<Duration>,
-}
-
 pub struct AudioPlayer<const SAMPLE_RATE: usize, const N_CH: usize> {
-	signal_tx: SyncSender<InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>>,
-	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
-	playing: Arc<(Mutex<PlayingState>, Condvar)>,
+	shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>,
+	base_stream: OutputStream<SAMPLE_RATE, N_CH>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH> {
-	fn new(device: Device, config: SupportedStreamConfig) -> Self {
-		let (signal_tx, signal_rx) =
-			sync_channel::<InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>>(0);
-
-		let playing = Arc::new((Mutex::new(PlayingState::default()), Condvar::default()));
-
-		let stream_daemon = ResourceDaemon::new({
-			let playing = playing.clone();
-
-			let mut currently_playing = None;
-
-			move |quit_signal| {
-				device
-					.build_output_stream(
-						&config.into(),
-						move |output: &mut [f32], info| match &mut currently_playing {
-							None => match signal_rx.try_recv() {
-								Err(TryRecvError::Disconnected) => {
-									panic!("internal error: broken channel")
-								}
-								Err(TryRecvError::Empty) => (),
-								Ok(new_signal) => {
-									currently_playing = Some((NOfSamples::new(0), new_signal));
-								}
-							},
-							Some((frame_idx, signal)) => {
-								if *frame_idx >= signal.n_of_samples() {
-									output.fill(0.);
-
-									currently_playing = None;
-									let mut guard = playing.0.lock().unwrap();
-									if guard.is_playing {
-										*guard = PlayingState {
-											is_playing: false,
-											last_frame_delay: info
-												.timestamp()
-												.playback
-												.duration_since(&info.timestamp().callback),
-										};
-										playing.1.notify_all();
-									}
-								} else {
-									let output_frames = NOfSamples::new(output.len() / N_CH);
-									debug_assert_eq!(output.len() % N_CH, 0);
-
-									let clamped_frames =
-										output_frames.min(signal.n_of_samples() - *frame_idx);
-
-									output[..clamped_frames.inner() * N_CH].copy_from_slice(
-										&signal.raw_buffer()[frame_idx.inner() * N_CH
-											..(frame_idx.inner() + clamped_frames.inner()) * N_CH],
-									);
-									output[clamped_frames.inner() * N_CH..].fill(0.);
-
-									*frame_idx += clamped_frames;
-								}
-							}
-						},
-						move |err| {
-							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
-						},
-						None,
-					)
-					.map_err(|err| AudioStreamError::BuildFailed(err.to_string()))
-					.and_then(|stream| {
-						stream
-							.play()
-							.map(|()| stream)
-							.map_err(|err| AudioStreamError::StartFailed(err.to_string()))
-					})
-			}
-		});
-
+	fn new(
+		shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>,
+		base_stream: OutputStream<SAMPLE_RATE, N_CH>,
+	) -> Self {
 		Self {
-			signal_tx,
-			stream_daemon,
-			playing,
+			shared,
+			base_stream,
 		}
 	}
 
 	#[must_use]
 	pub fn state(&self) -> AudioStreamSamplingState {
-		match self.stream_daemon.state() {
-			resource_daemon::DaemonState::Holding => AudioStreamSamplingState::Sampling,
-			resource_daemon::DaemonState::Quitting(reason)
-			| resource_daemon::DaemonState::Quit(reason) => {
-				AudioStreamSamplingState::Stopped(reason.unwrap_or(AudioStreamError::Cancelled))
-			}
-		}
+		self.base_stream.state()
 	}
 
 	/// Note: the wait time is based on when the iterator is exhausted and an estimate on when the output
@@ -159,29 +76,22 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	/// - if the mutex guarding the state of the associated thread is poisoned
 	pub fn wait(&self) {
 		let guard = self
-			.playing
+			.shared
 			.1
-			.wait_while(self.playing.0.lock().unwrap(), |p| p.is_playing)
+			.wait_while(self.shared.0.lock().unwrap(), |p| !p.end_of_signal)
 			.unwrap();
-		let last_frame_delay = guard.last_frame_delay;
 		drop(guard);
-		if let Some(last_frame_delay) = last_frame_delay {
-			sleep(last_frame_delay);
-		}
+		sleep(self.base_stream.avg_output_delay());
 	}
 
 	/// # Panics
 	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_signal(&mut self, signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>) {
-		self.playing.0.with_lock_mut(|p| {
-			*p = PlayingState {
-				is_playing: true,
-				last_frame_delay: None,
-			}
+		self.shared.0.with_lock_mut(|shared| {
+			shared.signal = signal;
+			shared.frame_idx = NOfFrames::new(0);
+			shared.end_of_signal = false;
 		});
-		self.signal_tx
-			.send(signal)
-			.expect("internal error: broken channel");
 	}
 
 	/// Note: blocking, `set_signal` is the non-blocking equivalent.
@@ -201,5 +111,60 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+}
+
+struct PlayerState<const SAMPLE_RATE: usize, const N_CH: usize> {
+	signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
+	end_of_signal: bool,
+	frame_idx: NOfFrames<SAMPLE_RATE, N_CH>,
+}
+
+struct AudioPlayerProducer<const SAMPLE_RATE: usize, const N_CH: usize> {
+	shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>,
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerProducer<SAMPLE_RATE, N_CH> {
+	fn new(shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>) -> Self {
+		Self { shared }
+	}
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamProducer<SAMPLE_RATE, N_CH>
+	for AudioPlayerProducer<SAMPLE_RATE, N_CH>
+{
+	fn data_producer(&mut self, mut chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &mut [f32]>) {
+		let output_frames = chunk.n_of_frames();
+		let should_notify = self.shared.0.with_lock_mut(|shared| {
+			if shared.end_of_signal {
+				chunk.raw_buffer_mut().fill(0.);
+				false
+			} else {
+				let clamped_frames =
+					output_frames.min(shared.signal.n_of_frames() - shared.frame_idx);
+
+				chunk.raw_buffer_mut()[..clamped_frames.n_of_samples()].copy_from_slice(
+					&shared.signal.raw_buffer()[shared.frame_idx.n_of_samples()
+						..(shared.frame_idx + clamped_frames).n_of_samples()],
+				);
+				chunk.raw_buffer_mut()[clamped_frames.n_of_samples()..].fill(0.);
+
+				shared.frame_idx += clamped_frames;
+
+				if shared.frame_idx == shared.signal.n_of_frames() {
+					shared.end_of_signal = true;
+					true
+				} else {
+					true
+				}
+			}
+		});
+		if should_notify {
+			self.shared.1.notify_all();
+		}
+	}
+
+	fn on_error(&mut self, _reason: &str) {
+		// ignored, it will just stop sampling
 	}
 }

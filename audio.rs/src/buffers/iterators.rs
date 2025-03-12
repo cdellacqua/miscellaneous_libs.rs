@@ -23,7 +23,7 @@ impl<'a, const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	) -> Self {
 		Self {
 			i: 0,
-			max: interleaved_samples.n_of_samples().inner(),
+			max: interleaved_samples.n_of_frames().inner(),
 			interleaved_samples,
 		}
 	}
@@ -68,7 +68,7 @@ impl<'a, const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	) -> Self {
 		Self {
 			i: 0,
-			max: interleaved_samples.n_of_samples().inner(),
+			max: interleaved_samples.n_of_frames().inner(),
 			interleaved_samples,
 		}
 	}
@@ -121,7 +121,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	) -> Self {
 		Self {
 			i: 0,
-			max: interleaved_samples.borrow().n_of_samples().inner(),
+			max: interleaved_samples.borrow().n_of_frames().inner(),
 			interleaved_samples,
 		}
 	}

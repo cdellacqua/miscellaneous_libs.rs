@@ -4,19 +4,16 @@
 
 use std::{
 	f32::consts::TAU,
-	sync::{Arc, RwLock},
+	sync::{Arc, Mutex},
 };
 
-use cpal::{
-	traits::{DeviceTrait, StreamTrait},
-	Device, Stream, SupportedStreamConfig,
-};
-use resource_daemon::ResourceDaemon;
+use mutex_ext::LockExt;
 
 use crate::{
-	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState,
+	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
 };
+
+use super::{OutputStream, OutputStreamBuilder, StreamProducer};
 
 /* TODO: support different set of frequencies per channel? */
 #[derive(Debug, Clone, PartialEq)]
@@ -47,137 +44,81 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
 	pub fn build(&self) -> Result<Oscillator<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let (device, config) = device_provider(
-			self.device_name.as_deref(),
-			crate::IOMode::Output,
-			N_CH,
-			SAMPLE_RATE,
-		)?;
+		let shared = Arc::new(Mutex::new(OscillatorState {
+			frame_idx: NOfFrames::new(0),
+			signal: frequencies_to_samples(SAMPLE_RATE, &self.frequencies, 0.).multiply(),
+			mute: false,
+			frequencies: self.frequencies.clone(),
+		}));
 
 		Ok(Oscillator::new(
-			device,
-			config,
-			self.frequencies.clone(),
-			self.mute,
+			shared.clone(),
+			OutputStreamBuilder::new(
+				self.device_name.clone(),
+				Box::new(OscillatorProducer::<SAMPLE_RATE, N_CH>::new(shared)),
+			)
+			.build()?,
 		))
 	}
 }
 
-struct OscillatorShared<const SAMPLE_RATE: usize, const N_CH: usize> {
+struct OscillatorState<const SAMPLE_RATE: usize, const N_CH: usize> {
+	frame_idx: NOfFrames<SAMPLE_RATE, N_CH>,
 	signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
 	frequencies: Vec<f32>,
 	mute: bool,
 }
 
 pub struct Oscillator<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<RwLock<OscillatorShared<SAMPLE_RATE, N_CH>>>,
-	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
+	shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>,
+	base_stream: OutputStream<SAMPLE_RATE, N_CH>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> {
 	fn new(
-		device: Device,
-		config: SupportedStreamConfig,
-		frequencies: Vec<f32>,
-		mute: bool,
+		shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>,
+		base_stream: OutputStream<SAMPLE_RATE, N_CH>,
 	) -> Self {
-		let shared: Arc<RwLock<OscillatorShared<SAMPLE_RATE, N_CH>>> =
-			Arc::new(RwLock::new(OscillatorShared {
-				signal: frequencies_to_samples(SAMPLE_RATE, &frequencies, 0.).multiply(),
-				frequencies,
-				mute,
-			}));
-
-		let stream_daemon = ResourceDaemon::new({
-			let shared = shared.clone();
-			let mut sample_idx = 0;
-
-			move |quit_signal| {
-				device
-					.build_output_stream(
-						&config.into(),
-						move |output: &mut [f32], _| {
-							let shared = shared.read().unwrap();
-							if shared.mute {
-								output.fill(0.);
-							} else {
-								debug_assert_eq!(output.len() % N_CH, 0);
-
-								let signal = &shared.signal;
-
-								let mut output_idx = 0;
-								while output_idx < output.len() {
-									let sample_idx_mod = sample_idx % signal.raw_buffer().len();
-									let available = (output.len() - output_idx)
-										.min(signal.raw_buffer().len() - sample_idx_mod);
-
-									output[output_idx..output_idx + available].copy_from_slice(
-										&signal.raw_buffer()
-											[sample_idx_mod..sample_idx_mod + available],
-									);
-									output_idx += available;
-									sample_idx += available;
-								}
-							}
-						},
-						move |err| {
-							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
-						},
-						None,
-					)
-					.map_err(|err| AudioStreamError::BuildFailed(err.to_string()))
-					.and_then(|stream| {
-						stream
-							.play()
-							.map(|()| stream)
-							.map_err(|err| AudioStreamError::StartFailed(err.to_string()))
-					})
-			}
-		});
-
 		Self {
 			shared,
-			stream_daemon,
+			base_stream,
 		}
 	}
 
 	#[must_use]
 	pub fn state(&self) -> AudioStreamSamplingState {
-		match self.stream_daemon.state() {
-			resource_daemon::DaemonState::Holding => AudioStreamSamplingState::Sampling,
-			resource_daemon::DaemonState::Quitting(reason)
-			| resource_daemon::DaemonState::Quit(reason) => {
-				AudioStreamSamplingState::Stopped(reason.unwrap_or(AudioStreamError::Cancelled))
-			}
-		}
+		self.base_stream.state()
 	}
 
 	/// # Panics
 	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_frequencies(&mut self, frequencies: &[f32]) {
-		let mut shared = self.shared.write().unwrap();
-		shared.frequencies = frequencies.to_vec();
-		shared.signal = frequencies_to_samples(SAMPLE_RATE, frequencies, 0.).multiply();
+		self.shared.with_lock_mut(|shared| {
+			shared.frequencies = frequencies.to_vec();
+			shared.signal = frequencies_to_samples(SAMPLE_RATE, frequencies, 0.).multiply();
+		});
 	}
 
 	/// # Panics
 	/// - if the mutex guarding the internal state is poisoned.
 	#[must_use]
 	pub fn frequencies(&self) -> Vec<f32> {
-		self.shared.read().unwrap().frequencies.clone()
+		self.shared.with_lock(|shared| shared.frequencies.clone())
 	}
 
 	/// # Panics
 	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_mute(&mut self, mute: bool) {
-		self.shared.write().unwrap().mute = mute;
+		self.shared.with_lock_mut(|shared| {
+			shared.mute = mute;
+		});
 	}
 
 	/// # Panics
 	/// - if the mutex guarding the internal state is poisoned.
 	#[must_use]
 	pub fn mute(&self) -> bool {
-		self.shared.read().unwrap().mute
+		self.shared.with_lock(|shared| shared.mute)
 	}
 
 	#[must_use]
@@ -218,6 +159,51 @@ pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 	mono.iter_mut().for_each(|s| *s /= abs_max);
 
 	InterleavedAudioBuffer::new(mono)
+}
+
+struct OscillatorProducer<const SAMPLE_RATE: usize, const N_CH: usize> {
+	shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>,
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorProducer<SAMPLE_RATE, N_CH> {
+	fn new(shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>) -> Self {
+		Self { shared }
+	}
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamProducer<SAMPLE_RATE, N_CH>
+	for OscillatorProducer<SAMPLE_RATE, N_CH>
+{
+	fn data_producer(&mut self, mut chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &mut [f32]>) {
+		let output_frames = chunk.n_of_frames();
+		self.shared.with_lock_mut(|shared| {
+			if shared.mute {
+				chunk.raw_buffer_mut().fill(0.);
+			} else {
+				let signal = &shared.signal;
+
+				let mut output_idx = NOfFrames::new(0);
+				while output_idx < output_frames {
+					let frame_idx_mod: NOfFrames<SAMPLE_RATE, N_CH> = shared.frame_idx % signal.n_of_frames().inner();
+					let available = (chunk.n_of_frames() - output_idx)
+						.min(signal.n_of_frames() - frame_idx_mod);
+
+					chunk.raw_buffer_mut()
+						[output_idx.n_of_samples()..(output_idx + available).n_of_samples()]
+						.copy_from_slice(
+							&signal.raw_buffer()[frame_idx_mod.n_of_samples()
+								..(frame_idx_mod + available).n_of_samples()],
+						);
+					output_idx += available;
+					shared.frame_idx += available;
+				}
+			}
+		});
+	}
+
+	fn on_error(&mut self, _reason: &str) {
+		// ignored, it will just stop sampling
+	}
 }
 
 #[cfg(test)]

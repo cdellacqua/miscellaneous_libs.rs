@@ -3,7 +3,7 @@ use std::{
 	vec,
 };
 
-use crate::NOfSamples;
+use crate::NOfFrames;
 
 use super::{
 	frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut,
@@ -72,11 +72,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 		(N_CH, self.raw_buffer)
 	}
 
-	/// The number of samples corresponds to the number of sampling points in time, regardless of the number
+	/// The number of frames corresponds to the number of sampling points in time, regardless of the number
 	/// of channels.
 	#[must_use]
-	pub fn n_of_samples(&self) -> NOfSamples<SAMPLE_RATE> {
-		NOfSamples::new(self.raw_buffer.borrow().len() / N_CH)
+	pub fn n_of_frames(&self) -> NOfFrames<SAMPLE_RATE, N_CH> {
+		NOfFrames::new(self.raw_buffer.borrow().len() / N_CH)
 	}
 
 	#[must_use]
@@ -126,7 +126,7 @@ impl<const SAMPLE_RATE: usize, Buffer: Borrow<[f32]>>
 	pub fn multiply<const OUT_N_CH: usize>(
 		&self,
 	) -> InterleavedAudioBuffer<SAMPLE_RATE, OUT_N_CH, Vec<f32>> {
-		let mut raw_buffer = vec![0f32; self.n_of_samples().inner() * OUT_N_CH];
+		let mut raw_buffer = vec![0f32; self.n_of_frames().inner() * OUT_N_CH];
 		for (channels, mono_sample) in raw_buffer.chunks_mut(OUT_N_CH).zip(self.as_mono()) {
 			channels.fill(*mono_sample);
 		}
@@ -152,7 +152,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	/// - if the index is out of bound.
 	#[must_use]
 	pub fn at_mut(&mut self, index: usize) -> AudioFrame<N_CH, &mut [f32; N_CH]> {
-		assert!(index < self.n_of_samples().inner());
+		assert!(index < self.n_of_frames().inner());
 
 		// SAFETY:
 		// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
@@ -328,7 +328,7 @@ mod tests {
 	fn test_duration() {
 		let snapshot = InterleavedAudioBuffer::<44100, 1, _>::new(vec![0.; 4410]);
 		assert_eq!(
-			snapshot.n_of_samples().to_duration(),
+			snapshot.n_of_frames().to_duration(),
 			Duration::from_millis(100)
 		);
 	}
