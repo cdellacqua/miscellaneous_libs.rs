@@ -16,14 +16,15 @@ use crate::{
 	AudioStreamSamplingState, NOfFrames,
 };
 
-pub trait StreamListener<const SAMPLE_RATE: usize, const N_CH: usize> {
-	fn on_data(&mut self, chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &[f32]>);
-	fn on_error(&mut self, reason: &str);
-}
+pub type OnDataCallback<const SAMPLE_RATE: usize, const N_CH: usize> =
+	dyn FnMut(InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &[f32]>) + Send + 'static;
+
+pub type OnErrorCallback = dyn FnOnce(&str) + Send + 'static;
 
 pub struct InputStreamBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
 	device_name: Option<String>,
-	listener: Box<dyn StreamListener<SAMPLE_RATE, N_CH> + Send + 'static>,
+	on_data: Box<OnDataCallback<SAMPLE_RATE, N_CH>>,
+	on_error: Option<Box<OnErrorCallback>>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> std::fmt::Debug
@@ -32,7 +33,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> std::fmt::Debug
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("InputStreamBuilder")
 			.field("device_name", &self.device_name)
-			.field("listener", &"<omitted>")
+			.field("on_data", &"<omitted>")
+			.field("on_error", &"<omitted>")
 			.finish()
 	}
 }
@@ -41,11 +43,13 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamBuilder<SAMPLE_RATE
 	#[must_use]
 	pub const fn new(
 		device_name: Option<String>,
-		listener: Box<dyn StreamListener<SAMPLE_RATE, N_CH> + Send + 'static>,
+		on_data: Box<OnDataCallback<SAMPLE_RATE, N_CH>>,
+		on_error: Option<Box<OnErrorCallback>>,
 	) -> Self {
 		Self {
 			device_name,
-			listener,
+			on_data,
+			on_error,
 		}
 	}
 
@@ -61,13 +65,17 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamBuilder<SAMPLE_RATE
 			SAMPLE_RATE,
 		)?;
 
-		Ok(InputStream::new(device, config, self.listener))
+		Ok(InputStream::new(
+			device,
+			config,
+			self.on_data,
+			self.on_error,
+		))
 	}
 }
 
 struct StreamState<const SAMPLE_RATE: usize, const N_CH: usize> {
 	input_delay_moving_avg: MovingAverage<Duration>,
-	listener: Box<dyn StreamListener<SAMPLE_RATE, N_CH> + Send + 'static>,
 }
 
 pub struct InputStream<const SAMPLE_RATE: usize, const N_CH: usize> {
@@ -79,12 +87,12 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStream<SAMPLE_RATE, N_CH>
 	fn new(
 		device: Device,
 		config: SupportedStreamConfig,
-		listener: Box<dyn StreamListener<SAMPLE_RATE, N_CH> + Send + 'static>,
+		mut on_data: Box<OnDataCallback<SAMPLE_RATE, N_CH>>,
+		mut on_error: Option<Box<OnErrorCallback>>,
 	) -> Self {
 		let shared = Arc::new(Mutex::new({
 			StreamState {
 				input_delay_moving_avg: MovingAverage::new(10),
-				listener,
 			}
 		}));
 
@@ -105,9 +113,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStream<SAMPLE_RATE, N_CH>
 								shared.with_lock_mut(
 									|StreamState {
 									     ref mut input_delay_moving_avg,
-									     listener,
 									 }| {
-										listener.on_data(InterleavedAudioBuffer::new(data));
+										on_data(InterleavedAudioBuffer::new(data));
 
 										input_delay_moving_avg.push(
 											info.timestamp()
@@ -122,9 +129,9 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStream<SAMPLE_RATE, N_CH>
 						},
 						move |err| {
 							quit_signal.dispatch(AudioStreamError::SamplingError(err.to_string()));
-							shared.with_lock_mut(|StreamState { listener, .. }| {
-								listener.on_error(&err.to_string());
-							});
+							if let Some(on_error) = on_error.take() {
+								on_error(&err.to_string());
+							}
 						},
 						None,
 					)

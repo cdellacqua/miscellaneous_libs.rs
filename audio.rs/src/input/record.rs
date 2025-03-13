@@ -11,7 +11,7 @@ use crate::{
 	NOfFrames,
 };
 
-use super::{InputStream, InputStreamBuilder, StreamListener};
+use super::{InputStream, InputStreamBuilder};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AudioRecorderBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
@@ -44,7 +44,17 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RA
 			shared.clone(),
 			InputStreamBuilder::new(
 				self.device_name.clone(),
-				Box::new(AudioRecorderListener::<SAMPLE_RATE, N_CH>::new(shared)),
+				Box::new(move |chunk| {
+					shared.with_lock_mut(|shared| {
+						shared.buffer.extend_from_slice(
+							&chunk.raw_buffer()[0..chunk
+								.raw_buffer()
+								.len()
+								.min(shared.buffer_size - chunk.raw_buffer().len())],
+						);
+					});
+				}),
+				None,
 			)
 			.build()?,
 		))
@@ -109,32 +119,6 @@ struct RecorderState<const SAMPLE_RATE: usize, const N_CH: usize> {
 	buffer: Vec<f32>,
 }
 
-struct AudioRecorderListener<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<Mutex<RecorderState<SAMPLE_RATE, N_CH>>>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderListener<SAMPLE_RATE, N_CH> {
-	fn new(shared: Arc<Mutex<RecorderState<SAMPLE_RATE, N_CH>>>) -> Self {
-		Self { shared }
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamListener<SAMPLE_RATE, N_CH>
-	for AudioRecorderListener<SAMPLE_RATE, N_CH>
-{
-	fn on_data(&mut self, chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &[f32]>) {
-		self.shared.with_lock_mut(|shared| {
-			shared
-				.buffer
-				.extend_from_slice(&chunk.raw_buffer()[0..chunk.raw_buffer().len().min(shared.buffer_size - chunk.raw_buffer().len())]);
-		});
-	}
-
-	fn on_error(&mut self, _reason: &str) {
-		// ignored, it will just stop sampling
-	}
-}
-
 #[cfg(test)]
 mod tests {
 	use std::{thread::sleep, time::Duration};
@@ -153,6 +137,7 @@ mod tests {
 		sleep(recorder.capacity().into());
 		let snapshot = recorder.take();
 		let mut player = AudioPlayerBuilder::<44100, 2>::new(None).build().unwrap();
+		assert_eq!(player.state(), AudioStreamSamplingState::Sampling);
 		player.play(snapshot);
 	}
 }

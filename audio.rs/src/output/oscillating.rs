@@ -13,7 +13,7 @@ use crate::{
 	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
 };
 
-use super::{OutputStream, OutputStreamBuilder, StreamProducer};
+use super::{OutputStream, OutputStreamBuilder};
 
 /* TODO: support different set of frequencies per channel? */
 #[derive(Debug, Clone, PartialEq)]
@@ -55,7 +55,34 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 			shared.clone(),
 			OutputStreamBuilder::new(
 				self.device_name.clone(),
-				Box::new(OscillatorProducer::<SAMPLE_RATE, N_CH>::new(shared)),
+				Box::new(move |mut chunk| {
+					let output_frames = chunk.n_of_frames();
+					shared.with_lock_mut(|shared| {
+						if shared.mute {
+							chunk.raw_buffer_mut().fill(0.);
+						} else {
+							let signal = &shared.signal;
+
+							let mut output_idx = NOfFrames::new(0);
+							while output_idx < output_frames {
+								let frame_idx_mod: NOfFrames<SAMPLE_RATE, N_CH> =
+									shared.frame_idx % signal.n_of_frames().inner();
+								let available = (chunk.n_of_frames() - output_idx)
+									.min(signal.n_of_frames() - frame_idx_mod);
+
+								chunk.raw_buffer_mut()[output_idx.n_of_samples()
+									..(output_idx + available).n_of_samples()]
+									.copy_from_slice(
+										&signal.raw_buffer()[frame_idx_mod.n_of_samples()
+											..(frame_idx_mod + available).n_of_samples()],
+									);
+								output_idx += available;
+								shared.frame_idx += available;
+							}
+						}
+					});
+				}),
+				None,
 			)
 			.build()?,
 		))
@@ -159,51 +186,6 @@ pub fn frequencies_to_samples<const SAMPLE_RATE: usize>(
 	mono.iter_mut().for_each(|s| *s /= abs_max);
 
 	InterleavedAudioBuffer::new(mono)
-}
-
-struct OscillatorProducer<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorProducer<SAMPLE_RATE, N_CH> {
-	fn new(shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>) -> Self {
-		Self { shared }
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamProducer<SAMPLE_RATE, N_CH>
-	for OscillatorProducer<SAMPLE_RATE, N_CH>
-{
-	fn data_producer(&mut self, mut chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &mut [f32]>) {
-		let output_frames = chunk.n_of_frames();
-		self.shared.with_lock_mut(|shared| {
-			if shared.mute {
-				chunk.raw_buffer_mut().fill(0.);
-			} else {
-				let signal = &shared.signal;
-
-				let mut output_idx = NOfFrames::new(0);
-				while output_idx < output_frames {
-					let frame_idx_mod: NOfFrames<SAMPLE_RATE, N_CH> = shared.frame_idx % signal.n_of_frames().inner();
-					let available = (chunk.n_of_frames() - output_idx)
-						.min(signal.n_of_frames() - frame_idx_mod);
-
-					chunk.raw_buffer_mut()
-						[output_idx.n_of_samples()..(output_idx + available).n_of_samples()]
-						.copy_from_slice(
-							&signal.raw_buffer()[frame_idx_mod.n_of_samples()
-								..(frame_idx_mod + available).n_of_samples()],
-						);
-					output_idx += available;
-					shared.frame_idx += available;
-				}
-			}
-		});
-	}
-
-	fn on_error(&mut self, _reason: &str) {
-		// ignored, it will just stop sampling
-	}
 }
 
 #[cfg(test)]

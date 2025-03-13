@@ -11,7 +11,7 @@ use crate::{
 	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
 };
 
-use super::{OutputStream, OutputStreamBuilder, StreamProducer};
+use super::{OutputStream, OutputStreamBuilder};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AudioPlayerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
@@ -42,7 +42,38 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 			shared.clone(),
 			OutputStreamBuilder::new(
 				self.device_name.clone(),
-				Box::new(AudioPlayerProducer::<SAMPLE_RATE, N_CH>::new(shared)),
+				Box::new(move |mut chunk| {
+					let output_frames = chunk.n_of_frames();
+					let should_notify = shared.0.with_lock_mut(|shared| {
+						if shared.end_of_signal {
+							chunk.raw_buffer_mut().fill(0.);
+							false
+						} else {
+							let clamped_frames =
+								output_frames.min(shared.signal.n_of_frames() - shared.frame_idx);
+
+							chunk.raw_buffer_mut()[..clamped_frames.n_of_samples()]
+								.copy_from_slice(
+									&shared.signal.raw_buffer()[shared.frame_idx.n_of_samples()
+										..(shared.frame_idx + clamped_frames).n_of_samples()],
+								);
+							chunk.raw_buffer_mut()[clamped_frames.n_of_samples()..].fill(0.);
+
+							shared.frame_idx += clamped_frames;
+
+							if shared.frame_idx == shared.signal.n_of_frames() {
+								shared.end_of_signal = true;
+								true
+							} else {
+								true
+							}
+						}
+					});
+					if should_notify {
+						shared.1.notify_all();
+					}
+				}),
+				None,
 			)
 			.build()?,
 		))
@@ -118,53 +149,4 @@ struct PlayerState<const SAMPLE_RATE: usize, const N_CH: usize> {
 	signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
 	end_of_signal: bool,
 	frame_idx: NOfFrames<SAMPLE_RATE, N_CH>,
-}
-
-struct AudioPlayerProducer<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerProducer<SAMPLE_RATE, N_CH> {
-	fn new(shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>) -> Self {
-		Self { shared }
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamProducer<SAMPLE_RATE, N_CH>
-	for AudioPlayerProducer<SAMPLE_RATE, N_CH>
-{
-	fn data_producer(&mut self, mut chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &mut [f32]>) {
-		let output_frames = chunk.n_of_frames();
-		let should_notify = self.shared.0.with_lock_mut(|shared| {
-			if shared.end_of_signal {
-				chunk.raw_buffer_mut().fill(0.);
-				false
-			} else {
-				let clamped_frames =
-					output_frames.min(shared.signal.n_of_frames() - shared.frame_idx);
-
-				chunk.raw_buffer_mut()[..clamped_frames.n_of_samples()].copy_from_slice(
-					&shared.signal.raw_buffer()[shared.frame_idx.n_of_samples()
-						..(shared.frame_idx + clamped_frames).n_of_samples()],
-				);
-				chunk.raw_buffer_mut()[clamped_frames.n_of_samples()..].fill(0.);
-
-				shared.frame_idx += clamped_frames;
-
-				if shared.frame_idx == shared.signal.n_of_frames() {
-					shared.end_of_signal = true;
-					true
-				} else {
-					true
-				}
-			}
-		});
-		if should_notify {
-			self.shared.1.notify_all();
-		}
-	}
-
-	fn on_error(&mut self, _reason: &str) {
-		// ignored, it will just stop sampling
-	}
 }

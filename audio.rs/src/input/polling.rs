@@ -7,9 +7,8 @@ use mutex_ext::LockExt;
 use ringbuffer::{AllocRingBuffer, RingBuffer};
 
 use crate::{
-	buffers::InterleavedAudioBuffer,
-	input::{InputStreamBuilder, StreamListener},
-	AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
+	buffers::InterleavedAudioBuffer, input::InputStreamBuilder, AudioStreamBuilderError,
+	AudioStreamSamplingState, NOfFrames,
 };
 
 use super::InputStream;
@@ -53,7 +52,13 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 			shared.clone(),
 			InputStreamBuilder::new(
 				self.device_name.clone(),
-				Box::new(InputStreamPollerListener::<SAMPLE_RATE, N_CH>::new(shared)),
+				Box::new(move |chunk| {
+					shared.with_lock_mut(|shared| {
+						shared.buffer.extend_from_slice(chunk.raw_buffer());
+						shared.collected_samples += chunk.n_of_frames();
+					});
+				}),
+				None,
 			)
 			.build()?,
 		))
@@ -179,31 +184,6 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 struct PollerState<const SAMPLE_RATE: usize, const N_CH: usize> {
 	buffer: AllocRingBuffer<f32>,
 	collected_samples: NOfFrames<SAMPLE_RATE, N_CH>,
-}
-
-struct InputStreamPollerListener<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerListener<SAMPLE_RATE, N_CH> {
-	fn new(shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>) -> Self {
-		Self { shared }
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> StreamListener<SAMPLE_RATE, N_CH>
-	for InputStreamPollerListener<SAMPLE_RATE, N_CH>
-{
-	fn on_data(&mut self, chunk: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &[f32]>) {
-		self.shared.with_lock_mut(|shared| {
-			shared.buffer.extend_from_slice(chunk.raw_buffer());
-			shared.collected_samples += chunk.n_of_frames();
-		});
-	}
-
-	fn on_error(&mut self, _reason: &str) {
-		// ignored, it will just stop sampling
-	}
 }
 
 #[cfg(test)]
