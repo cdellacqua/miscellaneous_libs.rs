@@ -5,6 +5,7 @@
 use std::{
 	f32::consts::TAU,
 	sync::{Arc, Mutex},
+	time::Duration,
 };
 
 use mutex_ext::LockExt;
@@ -156,6 +157,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+
+	#[must_use]
+	pub fn avg_output_delay(&self) -> Duration {
+		self.base_stream.avg_output_delay()
 	}
 }
 

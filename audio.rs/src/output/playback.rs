@@ -3,6 +3,7 @@
 use std::{
 	sync::{Arc, Condvar, Mutex},
 	thread::sleep,
+	time::Duration,
 };
 
 use mutex_ext::LockExt;
@@ -142,6 +143,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+
+	#[must_use]
+	pub fn avg_output_delay(&self) -> Duration {
+		self.base_stream.avg_output_delay()
 	}
 }
 

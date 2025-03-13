@@ -1,6 +1,7 @@
 use std::{
 	mem::replace,
 	sync::{Arc, Mutex},
+	time::Duration,
 };
 
 use mutex_ext::LockExt;
@@ -111,6 +112,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 	#[must_use]
 	pub fn n_of_channels(&self) -> usize {
 		N_CH
+	}
+
+	#[must_use]
+	pub fn avg_input_delay(&self) -> Duration {
+		self.base_stream.avg_input_delay()
 	}
 }
 

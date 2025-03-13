@@ -177,7 +177,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 
 	#[must_use]
 	pub fn avg_input_delay(&self) -> Duration {
-		todo!()
+		self.base_stream.avg_input_delay()
 	}
 }
 
