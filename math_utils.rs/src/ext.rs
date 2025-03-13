@@ -45,7 +45,6 @@ macro_rules! impl_div_for_float {
 
 impl_div_for_float!(f32, f64);
 
-
 impl DivisibleByUsize for Duration {
 	fn div_usize(self, rhs: usize) -> Duration {
 		self / rhs as u32

@@ -8,16 +8,13 @@ use math_utils::discrete_interval::DiscreteInterval;
 
 /// A [`DiscreteInterval`] instance that describes the DFT bins
 /// as a sequence of bins, centered around their respective frequencies.
-/// 
+///
 /// Note that bin 0 is centered at 0Hz, which implies that it's range is from `(-bin_width / 2, +bin_width / 2)`.
 /// Also note that this discrete interval includes the Nyquist frequency (`bin_idx == samples / 2`), which is centered around `sample_rate / 2`, therefore
 /// its range is `(sample_rate / 2 - bin_width / 2, sample_rate / 2 + bin_width / 2)`.
 #[must_use]
 #[allow(clippy::cast_precision_loss)]
-pub fn dft_frequency_interval(
-	sample_rate: usize,
-	samples: usize,
-) -> DiscreteInterval<f32> {
+pub fn dft_frequency_interval(sample_rate: usize, samples: usize) -> DiscreteInterval<f32> {
 	DiscreteInterval::new(
 		(
 			-(sample_rate as f32 / 2. / samples as f32),

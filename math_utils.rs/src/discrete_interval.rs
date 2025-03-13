@@ -104,12 +104,10 @@ mod tests {
 		assert_eq!(interval.n_of_bins, 10);
 		assert!((interval.bin_width() - 10.).abs() < f32::EPSILON);
 		assert!(
-			(interval.bin_to_range_start(interval.value_to_bin(100.)) - 90.).abs()
-				< f32::EPSILON
+			(interval.bin_to_range_start(interval.value_to_bin(100.)) - 90.).abs() < f32::EPSILON
 		);
 		assert!(
-			(interval.bin_to_range_end(interval.value_to_bin(100.)) - 100.).abs()
-				< f32::EPSILON
+			(interval.bin_to_range_end(interval.value_to_bin(100.)) - 100.).abs() < f32::EPSILON
 		);
 	}
 
