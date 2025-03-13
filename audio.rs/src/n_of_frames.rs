@@ -9,13 +9,13 @@ use derive_more::derive::{
 
 /// Note: will convert to microseconds to approximate the number of samples
 #[must_use]
-pub const fn duration_to_n_of_samples(duration: Duration, sample_rate: usize) -> usize {
+pub const fn duration_to_n_of_frames(duration: Duration, sample_rate: usize) -> usize {
 	sample_rate * duration.as_micros() as usize / 1_000_000
 }
 
 /// Note: will convert to microseconds to approximate the number of samples
 #[must_use]
-pub const fn n_of_samples_to_duration(samples: usize, sample_rate: usize) -> Duration {
+pub const fn n_of_frames_to_duration(samples: usize, sample_rate: usize) -> Duration {
 	Duration::from_micros((samples * 1_000_000 / sample_rate) as u64)
 }
 
@@ -61,12 +61,12 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> NOfFrames<SAMPLE_RATE, N_CH> {
 	/// Note: will convert to microseconds to approximate the number of samples
 	#[must_use]
 	pub const fn from_duration(duration: Duration) -> Self {
-		Self(duration_to_n_of_samples(duration, SAMPLE_RATE))
+		Self(duration_to_n_of_frames(duration, SAMPLE_RATE))
 	}
 
 	#[must_use]
 	pub const fn to_duration(&self) -> Duration {
-		n_of_samples_to_duration(self.0, SAMPLE_RATE)
+		n_of_frames_to_duration(self.0, SAMPLE_RATE)
 	}
 
 	#[must_use]
@@ -156,33 +156,33 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_duration_to_n_of_samples() {
+	fn test_duration_to_n_of_frames() {
 		assert_eq!(
-			duration_to_n_of_samples(Duration::from_millis(100), 44100),
+			duration_to_n_of_frames(Duration::from_millis(100), 44100),
 			4410
 		);
 		assert_eq!(
-			duration_to_n_of_samples(Duration::from_secs(1), 44100),
+			duration_to_n_of_frames(Duration::from_secs(1), 44100),
 			44100
 		);
 		assert_eq!(
-			duration_to_n_of_samples(Duration::from_secs(2), 44100),
+			duration_to_n_of_frames(Duration::from_secs(2), 44100),
 			2 * 44100
 		);
 	}
 
 	#[test]
-	fn test_n_of_samples_to_duration() {
+	fn test_n_of_frames_to_duration() {
 		assert_eq!(
-			n_of_samples_to_duration(4410, 44100),
+			n_of_frames_to_duration(4410, 44100),
 			Duration::from_millis(100)
 		);
 		assert_eq!(
-			n_of_samples_to_duration(44100, 44100),
+			n_of_frames_to_duration(44100, 44100),
 			Duration::from_secs(1)
 		);
 		assert_eq!(
-			n_of_samples_to_duration(2 * 44100, 44100),
+			n_of_frames_to_duration(2 * 44100, 44100),
 			Duration::from_secs(2)
 		);
 	}

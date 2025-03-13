@@ -43,7 +43,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 					buf.fill(0.);
 					buf
 				},
-				collected_samples: self.n_of_frames, // buffer pre-filled with 0.
+				collected_frames: self.n_of_frames, // buffer pre-filled with 0.
 			}
 		}));
 
@@ -55,7 +55,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 				Box::new(move |chunk| {
 					shared.with_lock_mut(|shared| {
 						shared.buffer.extend_from_slice(chunk.raw_buffer());
-						shared.collected_samples += chunk.n_of_frames();
+						shared.collected_frames += chunk.n_of_frames();
 					});
 				}),
 				None,
@@ -66,19 +66,19 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPollerBuilder<SAMPL
 }
 
 pub struct InputStreamPoller<const SAMPLE_RATE: usize, const N_CH: usize> {
-	n_of_samples: NOfFrames<SAMPLE_RATE, N_CH>,
+	n_of_frames: NOfFrames<SAMPLE_RATE, N_CH>,
 	shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>,
 	base_stream: InputStream<SAMPLE_RATE, N_CH>,
 }
 
 impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE, N_CH> {
 	fn new(
-		n_of_samples: NOfFrames<SAMPLE_RATE, N_CH>,
+		n_of_frames: NOfFrames<SAMPLE_RATE, N_CH>,
 		shared: Arc<Mutex<PollerState<SAMPLE_RATE, N_CH>>>,
 		base_stream: InputStream<SAMPLE_RATE, N_CH>,
 	) -> Self {
 		Self {
-			n_of_samples,
+			n_of_frames,
 			shared,
 			base_stream,
 		}
@@ -95,24 +95,24 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 		InterleavedAudioBuffer::new(self.shared.with_lock(|shared| shared.buffer.to_vec()))
 	}
 
-	/// Extract the last N samples from the internal buffer
+	/// Extract the last N frames from the internal buffer
 	#[allow(clippy::missing_panics_doc)] // REASON: the code path when passing None always returns a Some(...)
 	#[must_use]
-	pub fn last_n_samples(
+	pub fn last_n_frames(
 		&self,
-		samples_to_extract: NOfFrames<SAMPLE_RATE, N_CH>,
+		frames_to_extract: NOfFrames<SAMPLE_RATE, N_CH>,
 	) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		self.samples_from_ref(samples_to_extract, None).unwrap().0
+		self.frames_from_ref(frames_to_extract, None).unwrap().0
 	}
 
-	/// Extract N samples or less (depending on availability) from the
+	/// Extract N frames or less (depending on availability) from the
 	/// internal buffer, starting from the specified
-	/// `previously_collected_samples`. You can
+	/// `previously_collected_frames`. You can
 	/// use this method to precisely concatenate signal snapshots
 	/// together.
 	///
-	/// When passing `None` as `previously_collected_samples`, this
-	/// method behaves like [`Self::last_n_samples`].
+	/// When passing `None` as `previously_collected_frames`, this
+	/// method behaves like [`Self::last_n_frames`].
 	///
 	/// Note: if between the two snapshots the buffer has already been
 	/// overwritten, None is returned.
@@ -122,27 +122,27 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 	///
 	/// Example (pseudocode):
 	/// ```rust ignore
-	/// let (beginning, collected_samples) = poller.samples_from_ref(NOfFrames::new(10), None);
-	/// sleep(Duration::from_millis(100)); // assuming poller buffer is big enough to contain ~100ms of samples
-	/// let (end, _) = poller.samples_from_ref(NOfFrames::new(10), Some(collected_samples));
+	/// let (beginning, collected_frames) = poller.frames_from_ref(NOfFrames::new(10), None);
+	/// sleep(Duration::from_millis(100)); // assuming poller buffer is big enough to contain ~100ms of frames
+	/// let (end, _) = poller.frames_from_ref(NOfFrames::new(10), Some(collected_frames));
 	/// assert!(poller.snapshot().has_slice(beginning.concat(end)))
 	/// ```
 	#[must_use]
-	pub fn samples_from_ref(
+	pub fn frames_from_ref(
 		&self,
-		samples_to_extract: NOfFrames<SAMPLE_RATE, N_CH>,
-		previously_collected_samples: Option<NOfFrames<SAMPLE_RATE, N_CH>>,
+		frames_to_extract: NOfFrames<SAMPLE_RATE, N_CH>,
+		previously_collected_frames: Option<NOfFrames<SAMPLE_RATE, N_CH>>,
 	) -> Option<(
 		InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
 		NOfFrames<SAMPLE_RATE, N_CH>,
 	)> {
 		let shared = self.shared.lock().unwrap();
-		let collected_samples = shared.collected_samples;
+		let collected_frames = shared.collected_frames;
 
-		let skip = match previously_collected_samples {
-			Some(prev) if collected_samples - prev >= self.n_of_samples => None,
-			Some(prev) => Some(self.n_of_samples - (collected_samples - prev)),
-			None => Some(self.n_of_samples - samples_to_extract.min(self.n_of_samples)),
+		let skip = match previously_collected_frames {
+			Some(prev) if collected_frames - prev >= self.n_of_frames => None,
+			Some(prev) => Some(self.n_of_frames - (collected_frames - prev)),
+			None => Some(self.n_of_frames - frames_to_extract.min(self.n_of_frames)),
 		};
 
 		skip.map(|skip| {
@@ -154,15 +154,15 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 					}
 					out
 				}),
-				collected_samples,
+				collected_frames,
 			)
 		})
 	}
 
 	/// Number of sampling points, regardless of the number of channels.
 	#[must_use]
-	pub fn n_of_samples(&self) -> NOfFrames<SAMPLE_RATE, N_CH> {
-		self.n_of_samples
+	pub fn n_of_frames(&self) -> NOfFrames<SAMPLE_RATE, N_CH> {
+		self.n_of_frames
 	}
 
 	#[must_use]
@@ -183,7 +183,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStreamPoller<SAMPLE_RATE,
 
 struct PollerState<const SAMPLE_RATE: usize, const N_CH: usize> {
 	buffer: AllocRingBuffer<f32>,
-	collected_samples: NOfFrames<SAMPLE_RATE, N_CH>,
+	collected_frames: NOfFrames<SAMPLE_RATE, N_CH>,
 }
 
 #[cfg(test)]
@@ -200,7 +200,7 @@ mod tests {
 		let poller = InputStreamPollerBuilder::<44100, 2>::new(Duration::from_secs(2).into(), None)
 			.build()
 			.unwrap();
-		sleep(poller.n_of_samples().into());
+		sleep(poller.n_of_frames().into());
 		let snapshot = poller.snapshot();
 		let mut player = AudioPlayerBuilder::<44100, 2>::new(None).build().unwrap();
 		player.play(snapshot);
