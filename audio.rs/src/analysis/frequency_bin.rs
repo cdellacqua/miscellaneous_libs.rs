@@ -80,10 +80,12 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Debug
 	for FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("FrequencyBin")
-			.field("bin_idx", &self.bin_idx)
-			.field("frequency_interval()", &self.frequency_interval())
-			.finish()
+		f.debug_struct(&format!(
+			"FrequencyBin<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
+		))
+		.field("bin_idx", &self.bin_idx)
+		.field("frequency_interval()", &self.frequency_interval())
+		.finish()
 	}
 }
 

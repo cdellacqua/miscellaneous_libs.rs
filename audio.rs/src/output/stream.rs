@@ -29,7 +29,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> std::fmt::Debug
 	for OutputStreamBuilder<SAMPLE_RATE, N_CH>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("OutputStreamBuilder")
+		f.debug_struct(&format!("OutputStreamBuilder<{SAMPLE_RATE}, {N_CH}>"))
 			.field("device_name", &self.device_name)
 			.field("data_producer", &"<omitted>")
 			.field("on_error", &"<omitted>")

@@ -31,7 +31,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> std::fmt::Debug
 	for InputStreamBuilder<SAMPLE_RATE, N_CH>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("InputStreamBuilder")
+		f.debug_struct(&format!("InputStreamBuilder<{SAMPLE_RATE}, {N_CH}>"))
 			.field("device_name", &self.device_name)
 			.field("on_data", &"<omitted>")
 			.field("on_error", &"<omitted>")

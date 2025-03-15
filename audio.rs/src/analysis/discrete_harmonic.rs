@@ -14,12 +14,14 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Debug
 	for DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>
 {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("DiscreteHarmonic")
-			.field("phasor", &self.phasor)
-			.field("frequency_bin", &self.frequency_bin)
-			.field("power()", &self.power())
-			.field("phase()", &self.phase())
-			.finish()
+		f.debug_struct(&format!(
+			"DiscreteHarmonic<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
+		))
+		.field("phasor", &self.phasor)
+		.field("frequency_bin", &self.frequency_bin)
+		.field("power()", &self.power())
+		.field("phase()", &self.phase())
+		.finish()
 	}
 }
 

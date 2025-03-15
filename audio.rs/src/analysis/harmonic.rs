@@ -22,10 +22,7 @@ impl Debug for Harmonic {
 impl Harmonic {
 	#[must_use]
 	pub fn new(phasor: Complex32, frequency: f32) -> Self {
-		Self {
-			phasor,
-			frequency,
-		}
+		Self { phasor, frequency }
 	}
 
 	#[must_use]
