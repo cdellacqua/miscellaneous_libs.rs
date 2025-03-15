@@ -7,16 +7,16 @@ use derive_more::derive::{
 	Add, AddAssign, Div, DivAssign, Mul, MulAssign, Rem, RemAssign, Sub, SubAssign,
 };
 
-/// Note: will convert to microseconds to approximate the number of samples
+/// Note: will convert to microseconds to approximate the number of frames
 #[must_use]
 pub const fn duration_to_n_of_frames(duration: Duration, sample_rate: usize) -> usize {
 	sample_rate * duration.as_micros() as usize / 1_000_000
 }
 
-/// Note: will convert to microseconds to approximate the number of samples
+/// Note: will convert to microseconds to approximate the number of frames
 #[must_use]
-pub const fn n_of_frames_to_duration(samples: usize, sample_rate: usize) -> Duration {
-	Duration::from_micros((samples * 1_000_000 / sample_rate) as u64)
+pub const fn n_of_frames_to_duration(frames: usize, sample_rate: usize) -> Duration {
+	Duration::from_micros((frames * 1_000_000 / sample_rate) as u64)
 }
 
 #[derive(
@@ -58,7 +58,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> NOfFrames<SAMPLE_RATE, N_CH> {
 		Self(n_of_samples / N_CH)
 	}
 
-	/// Note: will convert to microseconds to approximate the number of samples
+	/// Note: will convert to microseconds to approximate the number of frames
 	#[must_use]
 	pub const fn from_duration(duration: Duration) -> Self {
 		Self(duration_to_n_of_frames(duration, SAMPLE_RATE))

@@ -6,7 +6,7 @@ use rustfft::{
 };
 
 use crate::analysis::{
-	n_of_frequency_bins, windowing_fns::HannWindow, FrequencyBin, Harmonic, WindowingFn,
+	n_of_frequency_bins, windowing_fns::HannWindow, DiscreteHarmonic, FrequencyBin, WindowingFn,
 };
 
 #[derive(Clone)]
@@ -14,7 +14,7 @@ pub struct StftAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usiz
 	windowing_values: Vec<f32>,
 	fft_processor: Arc<dyn Fft<f32>>,
 	complex_signal: Vec<Complex32>,
-	cur_transform_bins: Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
+	cur_transform_bins: Vec<DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	normalization_factor: f32,
 }
 
@@ -47,7 +47,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 				.collect(),
 			fft_processor: planner.plan_fft_forward(SAMPLES_PER_WINDOW),
 			complex_signal: vec![Complex { re: 0., im: 0. }; SAMPLES_PER_WINDOW],
-			cur_transform_bins: vec![Harmonic::default(); transform_size],
+			cur_transform_bins: vec![DiscreteHarmonic::default(); transform_size],
 			// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
 			#[allow(clippy::cast_precision_loss)]
 			normalization_factor: 1.0 / (SAMPLES_PER_WINDOW as f32).sqrt(),
@@ -63,7 +63,10 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<Harmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
+	pub fn analyze(
+		&mut self,
+		signal: &[f32],
+	) -> &Vec<DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
 		let samples = signal.len();
 
 		assert_eq!(
@@ -88,7 +91,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			.zip(self.complex_signal.iter().take(transform_size))
 			.enumerate()
 			.for_each(|(i, (dst, src))| {
-				*dst = Harmonic::new(src * self.normalization_factor, FrequencyBin::new(i));
+				*dst = DiscreteHarmonic::new(src * self.normalization_factor, FrequencyBin::new(i));
 			});
 
 		&self.cur_transform_bins
@@ -118,7 +121,10 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Default
 mod tests {
 	use math_utils::one_dimensional_mapping::MapRatio;
 
-	use crate::{analysis::all_frequency_bins, output::frequencies_to_samples};
+	use crate::{
+		analysis::{all_frequency_bins, Harmonic},
+		output::harmonics_to_samples,
+	};
 
 	use super::*;
 
@@ -126,10 +132,10 @@ mod tests {
 	#[allow(clippy::cast_precision_loss)]
 	fn stft_peaks_at_frequency_bin() {
 		const SAMPLE_RATE: usize = 44100;
-		const SAMPLES: usize = 44100;
+		const SAMPLES_PER_WINDOW: usize = 44100;
 
-		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
-		let bins = all_frequency_bins(SAMPLE_RATE, SAMPLES);
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::default();
+		let bins = all_frequency_bins(SAMPLE_RATE, SAMPLES_PER_WINDOW);
 		let delta_hz = bins[1].frequency() - bins[0].frequency();
 
 		for i in 1..100 {
@@ -138,7 +144,10 @@ mod tests {
 				bins[10].frequency() + delta_hz / 2.,
 			));
 
-			let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
+			let signal = harmonics_to_samples::<SAMPLE_RATE>(
+				SAMPLES_PER_WINDOW,
+				&[Harmonic::new(Complex32::ONE, frequency)],
+			);
 			let analysis = stft_analyzer.analyze(signal.as_mono());
 			assert!(
 				(analysis
@@ -157,10 +166,13 @@ mod tests {
 	#[allow(clippy::cast_precision_loss)]
 	fn stft_peaks_at_frequency_bin_440() {
 		const SAMPLE_RATE: usize = 44100;
-		const SAMPLES: usize = 100;
+		const SAMPLES_PER_WINDOW: usize = 100;
 
-		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
-		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[440.], 0.);
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::default();
+		let signal = harmonics_to_samples::<SAMPLE_RATE>(
+			SAMPLES_PER_WINDOW,
+			&[Harmonic::new(Complex32::ONE, 440.)],
+		);
 		let analysis = stft_analyzer.analyze(signal.as_mono());
 		let harmonic = analysis[1..] // skip 0Hz
 			.iter()
@@ -174,15 +186,18 @@ mod tests {
 	#[allow(clippy::cast_precision_loss)]
 	fn stft_phase() {
 		const SAMPLE_RATE: usize = 44100;
-		const SAMPLES: usize = 4410;
+		const SAMPLES_PER_WINDOW: usize = 4410;
 
-		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::new(50);
+		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(50);
 
-		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES>::default();
+		let mut stft_analyzer = StftAnalyzer::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::default();
 
 		let frequency = bin.frequency();
 
-		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
+		let signal = harmonics_to_samples::<SAMPLE_RATE>(
+			SAMPLES_PER_WINDOW,
+			&[Harmonic::new(Complex32::ONE, frequency)],
+		);
 		let analysis = stft_analyzer.analyze(signal.as_mono());
 		let phase = analysis
 			.iter()

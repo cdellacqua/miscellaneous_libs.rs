@@ -9,26 +9,32 @@ pub use goertzel_analyzer::*;
 mod tests {
 	use std::f32::consts::TAU;
 
+	use rustfft::num_complex::Complex32;
+
 	use crate::{
 		analysis::{
 			dft::{GoertzelAnalyzer, StftAnalyzer},
 			windowing_fns::HannWindow,
-			FrequencyBin,
+			FrequencyBin, Harmonic,
 		},
-		output::frequencies_to_samples,
+		output::harmonics_to_samples,
 	};
 
 	#[test]
 	fn cross_check_goertzel_and_stft() {
 		const SAMPLE_RATE: usize = 44100;
-		const SAMPLES: usize = 44100;
+		const SAMPLES_PER_WINDOW: usize = 44100;
 
 		let frequency = 440.;
-		let frequency_bin = FrequencyBin::<SAMPLE_RATE, SAMPLES>::from_frequency(frequency);
+		let frequency_bin =
+			FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::from_frequency(frequency);
 
-		let signal = frequencies_to_samples::<SAMPLE_RATE>(SAMPLES, &[frequency], 0.);
+		let signal = harmonics_to_samples::<SAMPLE_RATE>(
+			SAMPLES_PER_WINDOW,
+			&[Harmonic::new(Complex32::ONE, frequency)],
+		);
 		let signal = signal.as_mono();
-		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES> = GoertzelAnalyzer::new(
+		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW> = GoertzelAnalyzer::new(
 			vec![
 				frequency_bin - 20,
 				frequency_bin - 15,
@@ -42,7 +48,8 @@ mod tests {
 			],
 			&HannWindow::new(),
 		);
-		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES> = StftAnalyzer::new(&HannWindow::new());
+		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW> =
+			StftAnalyzer::new(&HannWindow::new());
 
 		let stft_result = stft
 			.analyze(signal)

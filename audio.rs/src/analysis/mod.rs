@@ -5,6 +5,9 @@ pub use windowing_fn::*;
 
 pub mod windowing_fns;
 
+mod discrete_harmonic;
+pub use discrete_harmonic::*;
+
 mod harmonic;
 pub use harmonic::*;
 

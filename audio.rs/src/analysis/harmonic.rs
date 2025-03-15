@@ -2,63 +2,35 @@ use std::fmt::Debug;
 
 use rustfft::num_complex::Complex32;
 
-use super::FrequencyBin;
-
 #[derive(Clone, Copy, PartialEq, Default)]
-pub struct Harmonic<const SAMPLE_RATE: usize, const SAMPLES: usize> {
+pub struct Harmonic {
 	phasor: Complex32,
-	frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>,
+	frequency: f32,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Debug for Harmonic<SAMPLE_RATE, SAMPLES> {
+impl Debug for Harmonic {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Harmonic")
 			.field("phasor", &self.phasor)
-			.field("frequency_bin", &self.frequency_bin)
+			.field("frequency", &self.frequency)
 			.field("power()", &self.power())
 			.field("phase()", &self.phase())
 			.finish()
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES: usize> Harmonic<SAMPLE_RATE, SAMPLES> {
+impl Harmonic {
 	#[must_use]
-	pub fn new(phasor: Complex32, frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES>) -> Self {
+	pub fn new(phasor: Complex32, frequency: f32) -> Self {
 		Self {
 			phasor,
-			frequency_bin,
+			frequency,
 		}
 	}
 
 	#[must_use]
-	pub fn from_bin_idx(phasor: Complex32, bin_idx: usize) -> Self {
-		Self {
-			phasor,
-			frequency_bin: FrequencyBin::new(bin_idx),
-		}
-	}
-
-	#[must_use]
-	pub fn from_frequency(phasor: Complex32, frequency: f32) -> Self {
-		Self {
-			phasor,
-			frequency_bin: FrequencyBin::from_frequency(frequency),
-		}
-	}
-
-	#[must_use]
-	pub fn frequency(&self) -> f32 {
-		self.frequency_bin.frequency()
-	}
-
-	#[must_use]
-	pub const fn bin_idx(&self) -> usize {
-		self.frequency_bin.bin_idx()
-	}
-
-	#[must_use]
-	pub const fn frequency_bin(&self) -> FrequencyBin<SAMPLE_RATE, SAMPLES> {
-		self.frequency_bin
+	pub const fn frequency(&self) -> f32 {
+		self.frequency
 	}
 
 	/// The phase of the harmonic represents the phase offset of a cosine wave (i.e. the real component of a DFT point).
