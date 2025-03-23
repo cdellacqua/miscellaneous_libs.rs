@@ -1,6 +1,7 @@
 use std::sync::Condvar;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
+use std::time::Duration;
 
 pub trait CondvarExt<'a, T, Guard> {
 	fn try_with_lock<O, Op: FnOnce(&T) -> O>(&'a self, op: Op) -> Option<O>;
@@ -9,16 +10,31 @@ pub trait CondvarExt<'a, T, Guard> {
 	fn with_lock<O, Op: FnOnce(&T) -> O>(&'a self, op: Op) -> O;
 	fn with_lock_mut<O, Op: FnOnce(&mut T) -> O>(&'a self, op: Op) -> O;
 
-	fn wait_then<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&T) -> O>(
+	fn wait_while_and_then<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&T) -> O>(
 		&'a self,
 		condition: C,
 		op: Op,
 	) -> O;
-	fn wait_then_mut<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&mut T) -> O>(
+	fn wait_while_and_then_mut<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&mut T) -> O>(
 		&'a self,
 		condition: C,
 		op: Op,
 	) -> O;
+
+	#[must_use]
+	fn wait_timeout_while_and_then<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&T) -> O>(
+		&'a self,
+		condition: C,
+		timeout: Duration,
+		op: Op,
+	) -> Option<O>;
+	#[must_use]
+	fn wait_timeout_while_and_then_mut<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&mut T) -> O>(
+		&'a self,
+		condition: C,
+		timeout: Duration,
+		op: Op,
+	) -> Option<O>;
 }
 
 impl<'a, T: Sized + 'a> CondvarExt<'a, T, MutexGuard<'a, T>> for (Mutex<T>, Condvar) {
@@ -57,7 +73,7 @@ impl<'a, T: Sized + 'a> CondvarExt<'a, T, MutexGuard<'a, T>> for (Mutex<T>, Cond
 		output
 	}
 
-	fn wait_then<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&T) -> O>(
+	fn wait_while_and_then<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&T) -> O>(
 		&'a self,
 		condition: C,
 		op: Op,
@@ -68,11 +84,10 @@ impl<'a, T: Sized + 'a> CondvarExt<'a, T, MutexGuard<'a, T>> for (Mutex<T>, Cond
 			.unwrap();
 		let output = op(&guard);
 		drop(guard);
-		self.1.notify_all();
 		output
 	}
 
-	fn wait_then_mut<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&mut T) -> O>(
+	fn wait_while_and_then_mut<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&mut T) -> O>(
 		&'a self,
 		condition: C,
 		op: Op,
@@ -85,5 +100,44 @@ impl<'a, T: Sized + 'a> CondvarExt<'a, T, MutexGuard<'a, T>> for (Mutex<T>, Cond
 		drop(guard);
 		self.1.notify_all();
 		output
+	}
+
+	fn wait_timeout_while_and_then<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&T) -> O>(
+		&'a self,
+		condition: C,
+		timeout: Duration,
+		op: Op,
+	) -> Option<O> {
+		let (guard, timeout_result) = self
+			.1
+			.wait_timeout_while(self.0.lock().unwrap(), timeout, condition)
+			.unwrap();
+		if timeout_result.timed_out() {
+			None
+		} else {
+			let output = op(&guard);
+			drop(guard);
+			Some(output)
+		}
+	}
+
+	fn wait_timeout_while_and_then_mut<O, C: FnMut(&mut T) -> bool, Op: FnOnce(&mut T) -> O>(
+		&'a self,
+		condition: C,
+		timeout: Duration,
+		op: Op,
+	) -> Option<O> {
+		let (mut guard, timeout_result) = self
+			.1
+			.wait_timeout_while(self.0.lock().unwrap(), timeout, condition)
+			.unwrap();
+		if timeout_result.timed_out() {
+			None
+		} else {
+			let output = op(&mut guard);
+			drop(guard);
+			self.1.notify_all();
+			Some(output)
+		}
 	}
 }
