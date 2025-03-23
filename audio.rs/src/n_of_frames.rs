@@ -1,4 +1,5 @@
 use std::{
+	fmt::Display,
 	ops::{Add, AddAssign, Sub, SubAssign},
 	time::Duration,
 };
@@ -146,6 +147,12 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> SubAssign<usize>
 {
 	fn sub_assign(&mut self, rhs: usize) {
 		self.0 -= rhs;
+	}
+}
+
+impl<const SAMPLE_RATE: usize, const N_CH: usize> Display for NOfFrames<SAMPLE_RATE, N_CH> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		Display::fmt(&self.0, f)
 	}
 }
 
