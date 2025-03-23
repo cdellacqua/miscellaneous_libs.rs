@@ -125,6 +125,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 		self.shared.with_lock_mut(|shared| {
 			shared.signal = harmonics_to_samples::<SAMPLE_RATE>(SAMPLE_RATE, &harmonics).multiply();
 			shared.harmonics = harmonics;
+			shared.frame_idx = 0.into();
 		});
 	}
 
