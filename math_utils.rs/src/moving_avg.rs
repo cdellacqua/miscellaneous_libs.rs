@@ -21,6 +21,20 @@ impl<T: Add<T, Output = T> + DivisibleByUsize + Default + Copy> MovingAverage<T>
 		self.series.push(value);
 	}
 
+	#[must_use]
+	pub fn is_window_full(&self) -> bool {
+		self.series.is_full()
+	}
+
+	#[must_use]
+	pub fn is_window_empty(&self) -> bool {
+		self.series.is_empty()
+	}
+
+	pub fn reset(&mut self) {
+		self.series.clear();
+	}
+
 	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by explicit check at the beginning of the function
 	#[must_use]
 	pub fn avg(&self) -> T {
