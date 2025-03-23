@@ -84,6 +84,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Debug
 			"FrequencyBin<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
 		))
 		.field("bin_idx", &self.bin_idx)
+		.field("frequency()", &self.frequency())
 		.field("frequency_interval()", &self.frequency_interval())
 		.finish()
 	}
