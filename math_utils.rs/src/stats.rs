@@ -1,6 +1,6 @@
 use crate::{even_odd::IsEven, ext::DivisibleByUsize};
 use std::{
-	borrow::Borrow,
+	borrow::{Borrow, BorrowMut},
 	cell::RefCell,
 	cmp::Ordering,
 	ops::{Add, Mul, Sub},
@@ -37,6 +37,16 @@ impl<T, Series: Borrow<[T]>> SeriesStatistics<T, Series> {
 				min: RefCell::default(),
 			})
 		}
+	}
+
+	pub fn series(&self) -> &[T] {
+		self.series.borrow()
+	}
+}
+
+impl<T, Series: BorrowMut<[T]>> SeriesStatistics<T, Series> {
+	pub fn series_mut(&mut self) -> &mut [T] {
+		self.series.borrow_mut()
 	}
 }
 
