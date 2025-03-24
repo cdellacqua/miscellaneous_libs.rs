@@ -20,6 +20,7 @@ pub struct SeriesStatistics<T, Series: Borrow<[T]>> {
 	variance: RefCell<Option<T>>,
 	max: RefCell<Option<T>>,
 	min: RefCell<Option<T>>,
+	median: RefCell<Option<T>>,
 }
 impl<T, Series: Borrow<[T]>> SeriesStatistics<T, Series> {
 	/// # Errors
@@ -35,6 +36,7 @@ impl<T, Series: Borrow<[T]>> SeriesStatistics<T, Series> {
 				variance: RefCell::default(),
 				max: RefCell::default(),
 				min: RefCell::default(),
+				median: RefCell::default(),
 			})
 		}
 	}
@@ -114,13 +116,17 @@ impl<T: PartialOrd + Add<T, Output = T> + DivisibleByUsize + Copy, Series: Borro
 
 	#[must_use]
 	pub fn median(&self) -> T {
-		let series = self.series.borrow();
-		let len = series.len();
-		if len.is_even() {
-			(series[len / 2 - 1] + series[len / 2]).div_usize(2)
-		} else {
-			series[len / 2]
-		}
+		*self.median.borrow_mut().get_or_insert_with(|| {
+			let borrow: &[T] = self.series.borrow();
+			let mut series = borrow.to_vec();
+			series.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+			let len = series.len();
+			if len.is_even() {
+				(series[len / 2 - 1] + series[len / 2]).div_usize(2)
+			} else {
+				series[len / 2]
+			}
+		})
 	}
 }
 
@@ -189,6 +195,13 @@ mod tests {
 	#[test]
 	fn test_median_even_series() {
 		let values: &[f64] = &[1., 2., 3., 4., 5., 6., 8., 9.];
+		let stats = SeriesStatistics::new(values).unwrap();
+		assert!((stats.median() - 4.5).abs() < f64::EPSILON);
+	}
+
+	#[test]
+	fn test_median_unsorted_series() {
+		let values: &[f64] = &[4., 9., 5., 1., 3., 6., 8., 2.];
 		let stats = SeriesStatistics::new(values).unwrap();
 		assert!((stats.median() - 4.5).abs() < f64::EPSILON);
 	}
