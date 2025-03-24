@@ -66,7 +66,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 								shared.end_of_signal = true;
 								true
 							} else {
-								true
+								false
 							}
 						}
 					});
