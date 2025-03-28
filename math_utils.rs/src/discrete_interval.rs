@@ -92,6 +92,26 @@ impl<
 		let value = self.bin_to_range_start(bin_idx);
 		value + half_gap
 	}
+
+	#[must_use]
+	pub fn n_of_bins(&self) -> usize {
+		self.n_of_bins
+	}
+
+	#[must_use]
+	pub fn interval(&self) -> (T, T) {
+		self.interval
+	}
+
+	#[must_use]
+	pub fn partitions(&self) -> Vec<(T, T)> {
+		(0..self.n_of_bins).map(|i| self.bin_range(i)).collect()
+	}
+
+	#[must_use]
+	pub fn partitions_mid(&self) -> Vec<T> {
+		(0..self.n_of_bins).map(|i| self.bin_midpoint(i)).collect()
+	}
 }
 
 #[cfg(test)]
