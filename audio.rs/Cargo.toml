@@ -16,7 +16,7 @@ output = []
 
 [dependencies]
 rustfft = "6.2.0"
-cpal = { git = "https://github.com/cdellacqua/cpal.rs.git", rev = "4a8c9b8ea6566b1fcca1bf7b816464c3151e7230" }
+cpal = { git = "https://github.com/RustAudio/cpal.git", rev = "c5a163e1332faa505948fe9550b85faf14c1322a" }
 mutex_ext = { path = "../mutex_ext.rs" }
 resource_daemon = { path = "../resource_daemon.rs" }
 math_utils = { path = "../math_utils.rs" }

@@ -205,9 +205,12 @@ pub fn harmonics_to_samples<const SAMPLE_RATE: usize>(
 
 #[cfg(test)]
 mod tests {
-	use std::{thread::sleep, time::Duration};
+	use std::{f32::consts::PI, thread::sleep, time::Duration};
 
+	use math_utils::one_dimensional_mapping::MapRange;
 	use rustfft::num_complex::Complex32;
+
+	use crate::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow, FrequencyBin};
 
 	use super::*;
 
@@ -245,5 +248,81 @@ mod tests {
 		let samples = harmonics_to_samples::<44100>(100, &[Harmonic::new(Complex32::ONE, 440.)]);
 		assert!((samples.as_mono()[0] - 1.0).abs() < f32::EPSILON);
 		assert!((samples.as_mono()[1] - 1.0).abs() > f32::EPSILON);
+	}
+
+	#[test]
+	#[ignore = "manually run this test to check the phase of the output with a spectrum analyzer"]
+	fn test_phase() {
+		let mut oscillator = OscillatorBuilder::<8000, 1>::new(
+			vec![Harmonic::new(
+				Complex32::from_polar(1., 0.),
+				FrequencyBin::<8000, 1024>::from_frequency(2000.0).frequency(),
+			)],
+			false,
+			None,
+		)
+		.build()
+		.unwrap();
+		sleep(Duration::from_secs(50));
+		oscillator.set_harmonics(vec![Harmonic::new(
+			Complex32::from_polar(1., PI),
+			FrequencyBin::<8000, 1024>::from_frequency(2000.0).frequency(),
+		)]);
+		sleep(Duration::from_secs(5));
+	}
+
+	#[test]
+	fn test_harmonic_phases() {
+		const N: usize = 10;
+		const SAMPLE_RATE: usize = 44100;
+		const SAMPLES_PER_WINDOW: usize = 64;
+
+		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::from_frequency(3000.0);
+		for phase_idx in 0..100 {
+			let ref_phase = (phase_idx as f32).map((0., 99.), (-PI, PI - 0.001));
+			let impulse = harmonics_to_samples::<SAMPLE_RATE>(
+				SAMPLES_PER_WINDOW,
+				&[Harmonic::new(
+					Complex32::from_polar(1., ref_phase),
+					bin.frequency(),
+				)],
+			);
+
+			let mut signal = vec![0.; impulse.n_of_frames().n_of_samples() * N];
+			for i in 0..N {
+				signal[i * impulse.n_of_frames().n_of_samples()
+					..(i + 1) * impulse.n_of_frames().n_of_samples()]
+					.copy_from_slice(impulse.as_mono());
+			}
+			let mut goertzel = GoertzelAnalyzer::new(vec![bin], &HannWindow);
+			let h = goertzel
+				.analyze(&signal[0..impulse.n_of_frames().n_of_samples()])
+				.first()
+				.copied()
+				.unwrap();
+
+			let phase = h.phase();
+
+			assert!(
+				(phase - ref_phase).abs() < 0.001,
+				"phase: {phase} - ref_phase: {ref_phase}"
+			);
+
+			for i in 1..N {
+				let h = goertzel
+					.analyze(
+						&signal[i * impulse.n_of_frames().n_of_samples()
+							..(i + 1) * impulse.n_of_frames().n_of_samples()],
+					)
+					.first()
+					.copied()
+					.unwrap();
+				let phase = h.phase();
+				assert!(
+					(phase - ref_phase).abs() < 0.001,
+					"phase: {phase} - ref_phase: {ref_phase}"
+				);
+			}
+		}
 	}
 }
