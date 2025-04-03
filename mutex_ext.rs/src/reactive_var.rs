@@ -70,4 +70,28 @@ impl<'a, T> CondvarExt<'a, T, MutexGuard<'a, T>> for ReactiveCondvar<T> {
 		self.0
 			.wait_timeout_while_and_then_mut(condition, timeout, op)
 	}
+
+	fn wait_while<C: FnMut(&mut T) -> bool>(&'a self, condition: C) {
+		self.0.wait_while(condition);
+	}
+
+	fn wait_while_mut<C: FnMut(&mut T) -> bool>(&'a self, condition: C) {
+		self.0.wait_while_mut(condition);
+	}
+
+	fn wait_timeout_while<C: FnMut(&mut T) -> bool>(
+		&'a self,
+		condition: C,
+		timeout: std::time::Duration,
+	) -> Option<()> {
+		self.0.wait_timeout_while(condition, timeout)
+	}
+
+	fn wait_timeout_while_mut<C: FnMut(&mut T) -> bool>(
+		&'a self,
+		condition: C,
+		timeout: std::time::Duration,
+	) -> Option<()> {
+		self.0.wait_timeout_while_mut(condition, timeout)
+	}
 }

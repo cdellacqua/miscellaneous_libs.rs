@@ -35,6 +35,30 @@ pub trait CondvarExt<'a, T, Guard> {
 		timeout: Duration,
 		op: Op,
 	) -> Option<O>;
+
+	fn wait_while<C: FnMut(&mut T) -> bool>(&'a self, condition: C) {
+		self.wait_while_and_then(condition, |_| ());
+	}
+	fn wait_while_mut<C: FnMut(&mut T) -> bool>(&'a self, condition: C) {
+		self.wait_while_and_then_mut(condition, |_| ());
+	}
+
+	#[must_use]
+	fn wait_timeout_while<C: FnMut(&mut T) -> bool>(
+		&'a self,
+		condition: C,
+		timeout: Duration,
+	) -> Option<()> {
+		self.wait_timeout_while_and_then(condition, timeout, |_| ())
+	}
+	#[must_use]
+	fn wait_timeout_while_mut<C: FnMut(&mut T) -> bool>(
+		&'a self,
+		condition: C,
+		timeout: Duration,
+	) -> Option<()> {
+		self.wait_timeout_while_and_then_mut(condition, timeout, |_| ())
+	}
 }
 
 impl<'a, T: Sized + 'a> CondvarExt<'a, T, MutexGuard<'a, T>> for (Mutex<T>, Condvar) {
