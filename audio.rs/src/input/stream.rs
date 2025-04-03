@@ -13,7 +13,7 @@ use resource_daemon::ResourceDaemon;
 
 use crate::{
 	buffers::InterleavedAudioBuffer, device_provider, AudioStreamBuilderError, AudioStreamError,
-	AudioStreamSamplingState, NOfFrames,
+	AudioStreamSamplingState,
 };
 
 pub type OnDataCallback<const SAMPLE_RATE: usize, const N_CH: usize> =
@@ -107,15 +107,15 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> InputStream<SAMPLE_RATE, N_CH>
 							let shared = shared.clone();
 
 							move |data: &[f32], info| {
-								let input_buffer_frames =
-									NOfFrames::<SAMPLE_RATE, N_CH>::new(data.len() / N_CH);
+								let wrapped = InterleavedAudioBuffer::new(data);
+								let input_buffer_frames = wrapped.n_of_frames();
+
+								on_data(wrapped);
 
 								shared.with_lock_mut(
 									|StreamState {
 									     ref mut input_delay_moving_avg,
 									 }| {
-										on_data(InterleavedAudioBuffer::new(data));
-
 										input_delay_moving_avg.push(
 											info.timestamp()
 												.callback

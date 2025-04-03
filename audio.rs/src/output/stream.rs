@@ -13,7 +13,7 @@ use resource_daemon::ResourceDaemon;
 
 use crate::{
 	buffers::InterleavedAudioBuffer, device_provider, input::OnErrorCallback,
-	AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState, NOfFrames,
+	AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
 };
 
 pub type DataProducer<const SAMPLE_RATE: usize, const N_CH: usize> =
@@ -105,15 +105,15 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStream<SAMPLE_RATE, N_CH
 							let shared = shared.clone();
 
 							move |output: &mut [f32], info| {
-								let output_buffer_frames: NOfFrames<SAMPLE_RATE, N_CH> =
-									NOfFrames::from_n_of_samples(output.len());
+								let wrapped = InterleavedAudioBuffer::new(output);
+								let output_buffer_frames = wrapped.n_of_frames();
+
+								data_producer(wrapped);
 
 								shared.with_lock_mut(
 									|StreamState {
 									     ref mut output_delay_moving_avg,
 									 }| {
-										data_producer(InterleavedAudioBuffer::new(output));
-
 										output_delay_moving_avg.push(
 											info.timestamp()
 												.playback
