@@ -101,14 +101,14 @@ mod tests {
 	use super::*;
 	use crate::{
 		analysis::{windowing_fns::HannWindow, Harmonic},
-		output::harmonics_to_samples,
+		output::harmonics_to_samples, SampleRate,
 	};
 	use math_utils::one_dimensional_mapping::MapRatio;
 
 	#[test]
 	#[allow(clippy::cast_precision_loss)]
 	fn goertzel_peaks_at_frequency_bin() {
-		let dft_ctx = DftCtx::new(44100, 4410);
+		let dft_ctx = DftCtx::new(crate::SampleRate(44100), 4410);
 
 		let bin = 50;
 
@@ -141,7 +141,7 @@ mod tests {
 	#[test]
 	#[allow(clippy::cast_precision_loss)]
 	fn goertzel_phase() {
-		let dft_ctx = DftCtx::new(44100, 4410);
+		let dft_ctx = DftCtx::new(SampleRate(44100), 4410);
 
 		let bin = 50;
 
@@ -170,7 +170,7 @@ mod tests {
 	#[test]
 	#[allow(clippy::cast_precision_loss)]
 	fn goertzel_peaks_at_frequency_bin_440() {
-		let dft_ctx = DftCtx::new(44100, 100);
+		let dft_ctx = DftCtx::new(SampleRate(44100), 100);
 
 		let bin = dft_ctx.frequency_to_bin(441.);
 		assert_eq!(bin, 1);

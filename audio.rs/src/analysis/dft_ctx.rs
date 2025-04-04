@@ -1,14 +1,16 @@
 use math_utils::discrete_interval::DiscreteInterval;
 
-#[derive(Debug, Clone, Copy)]
+use crate::SampleRate;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DftCtx {
-	sample_rate: usize,
+	sample_rate: SampleRate,
 	samples_per_window: usize,
 }
 
 impl DftCtx {
 	#[must_use]
-	pub const fn new(sample_rate: usize, samples_per_window: usize) -> Self {
+	pub const fn new(sample_rate: SampleRate, samples_per_window: usize) -> Self {
 		Self {
 			sample_rate,
 			samples_per_window,
@@ -16,7 +18,7 @@ impl DftCtx {
 	}
 
 	#[must_use]
-	pub const fn sample_rate(&self) -> usize {
+	pub const fn sample_rate(&self) -> SampleRate {
 		self.sample_rate
 	}
 
@@ -36,9 +38,9 @@ impl DftCtx {
 	pub fn frequency_interval(&self) -> DiscreteInterval<f32> {
 		DiscreteInterval::new(
 			(
-				-(self.sample_rate as f32 / 2. / self.samples_per_window as f32),
-				self.sample_rate as f32 / 2.
-					+ (self.sample_rate as f32 / 2. / self.samples_per_window as f32),
+				-(self.sample_rate.0 as f32 / 2. / self.samples_per_window as f32),
+				self.sample_rate.0 as f32 / 2.
+					+ (self.sample_rate.0 as f32 / 2. / self.samples_per_window as f32),
 			),
 			self.n_of_bins(),
 		)

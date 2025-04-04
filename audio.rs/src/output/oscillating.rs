@@ -11,112 +11,91 @@ use std::{
 use mutex_ext::LockExt;
 
 use crate::{
-	analysis::Harmonic, buffers::InterleavedAudioBuffer, AudioStreamBuilderError,
-	AudioStreamSamplingState, NOfFrames,
+	analysis::Harmonic, AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames, SampleRate,
+	SamplingCtx,
 };
 
-use super::{OutputStream, OutputStreamBuilder};
+use super::OutputStream;
 
-/* TODO: support different set of frequencies per channel? */
-#[derive(Debug, Clone, PartialEq)]
-pub struct OscillatorBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
+struct OscillatorState {
+	frame_idx: NOfFrames,
 	harmonics: Vec<Harmonic>,
 	mute: bool,
-	device_name: Option<String>,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize> Default for OscillatorBuilder<SAMPLE_RATE, N_CH> {
-	fn default() -> Self {
-		Self::new(vec![], false, None)
-	}
+pub struct Oscillator {
+	shared: Arc<Mutex<OscillatorState>>,
+	base_stream: OutputStream,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE, N_CH> {
-	#[must_use]
-	pub fn new(harmonics: Vec<Harmonic>, mute: bool, device_name: Option<String>) -> Self {
-		Self {
-			harmonics,
-			mute,
-			device_name,
-		}
-	}
-
-	/// Build and start output stream
+impl Oscillator {
+	/// Build and start sampling an input stream
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	pub fn build(&self) -> Result<Oscillator<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
+	pub fn new(
+		sampling_ctx: SamplingCtx,
+		device_name: Option<&str>,
+	) -> Result<Self, AudioStreamBuilderError> {
 		let shared = Arc::new(Mutex::new(OscillatorState {
-			frame_idx: NOfFrames::new(0),
-			signal: InterleavedAudioBuffer::new(harmonics_to_samples(
-				SAMPLE_RATE,
-				SAMPLE_RATE,
-				&self.harmonics,
-			))
-			.multiply(),
+			frame_idx: NOfFrames(0),
 			mute: false,
-			harmonics: self.harmonics.clone(),
+			harmonics: vec![],
 		}));
 
-		Ok(Oscillator::new(
-			shared.clone(),
-			OutputStreamBuilder::new(
-				self.device_name.clone(),
-				Box::new(move |mut chunk| {
-					let output_frames = chunk.n_of_frames();
+		let base_stream = OutputStream::new(
+			sampling_ctx,
+			device_name,
+			Box::new({
+				let shared = shared.clone();
+				move |mut chunk| {
 					shared.with_lock_mut(|shared| {
 						if shared.mute {
 							chunk.raw_buffer_mut().fill(0.);
 						} else {
-							let signal = &shared.signal;
+							let harmonics = &shared.harmonics;
 
-							let mut output_idx = NOfFrames::new(0);
-							while output_idx < output_frames {
-								let frame_idx_mod: NOfFrames<SAMPLE_RATE, N_CH> =
-									shared.frame_idx % signal.n_of_frames().inner();
-								let available = (chunk.n_of_frames() - output_idx)
-									.min(signal.n_of_frames() - frame_idx_mod);
+							let harmonics_data: Vec<_> = harmonics
+								.iter()
+								.map(|h| (h.amplitude(), h.phase(), h.frequency()))
+								.collect();
 
-								chunk.raw_buffer_mut()[output_idx.n_of_samples()
-									..(output_idx + available).n_of_samples()]
-									.copy_from_slice(
-										&signal.raw_buffer()[frame_idx_mod.n_of_samples()
-											..(frame_idx_mod + available).n_of_samples()],
-									);
-								output_idx += available;
-								shared.frame_idx += available;
+							let sum_of_amplitudes = harmonics_data
+								.iter()
+								.map(|(amplitude, ..)| amplitude)
+								.sum::<f32>();
+
+							for i in 0..chunk.n_of_frames().0 {
+								chunk.at_mut(i).samples_mut().fill(
+									harmonics_data
+										.iter()
+										.map(|(amplitude, phase, frequency)| {
+											amplitude / sum_of_amplitudes
+												* f32::cos(
+													phase
+														+ TAU
+															* frequency * ((shared.frame_idx.0 + i)
+															as f32 / sampling_ctx
+															.sample_rate()
+															.0
+															as f32),
+												)
+										})
+										.sum::<f32>(),
+								);
 							}
+
+							shared.frame_idx += chunk.n_of_frames();
 						}
 					});
-				}),
-				None,
-			)
-			.build()?,
-		))
-	}
-}
-
-struct OscillatorState<const SAMPLE_RATE: usize, const N_CH: usize> {
-	frame_idx: NOfFrames<SAMPLE_RATE, N_CH>,
-	signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
-	harmonics: Vec<Harmonic>,
-	mute: bool,
-}
-
-pub struct Oscillator<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>,
-	base_stream: OutputStream<SAMPLE_RATE, N_CH>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> {
-	fn new(
-		shared: Arc<Mutex<OscillatorState<SAMPLE_RATE, N_CH>>>,
-		base_stream: OutputStream<SAMPLE_RATE, N_CH>,
-	) -> Self {
-		Self {
+				}
+			}),
+			None,
+		)?;
+		Ok(Self {
 			shared,
 			base_stream,
-		}
+		})
 	}
 
 	#[must_use]
@@ -128,14 +107,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_harmonics(&mut self, harmonics: Vec<Harmonic>) {
 		self.shared.with_lock_mut(|shared| {
-			shared.signal = InterleavedAudioBuffer::new(harmonics_to_samples(
-				SAMPLE_RATE,
-				SAMPLE_RATE,
-				&harmonics,
-			))
-			.multiply();
 			shared.harmonics = harmonics;
-			shared.frame_idx = 0.into();
+			shared.frame_idx = NOfFrames(0);
 		});
 	}
 
@@ -162,13 +135,18 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	}
 
 	#[must_use]
-	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
+	pub fn sampling_ctx(&self) -> SamplingCtx {
+		self.base_stream.sampling_ctx()
 	}
 
 	#[must_use]
-	pub fn n_of_channels(&self) -> usize {
-		N_CH
+	pub fn sample_rate(&self) -> SampleRate {
+		self.base_stream.sample_rate()
+	}
+
+	#[must_use]
+	pub fn n_ch(&self) -> usize {
+		self.base_stream.n_ch()
 	}
 
 	#[must_use]
@@ -181,7 +159,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 /// specified frequency, phase and amplitude.
 #[must_use]
 pub fn harmonics_to_samples(
-	sample_rate: usize,
+	sample_rate: SampleRate,
 	n_of_samples: usize,
 	harmonics: &[Harmonic],
 ) -> Vec<f32> {
@@ -197,7 +175,8 @@ pub fn harmonics_to_samples(
 			harmonics_data
 				.iter()
 				.map(|(amplitude, phase, frequency)| {
-					amplitude * f32::cos(phase + TAU * frequency * (i as f32 / sample_rate as f32))
+					amplitude
+						* f32::cos(phase + TAU * frequency * (i as f32 / sample_rate.0 as f32))
 				})
 				.sum::<f32>()
 		})
@@ -228,35 +207,30 @@ mod tests {
 	#[test]
 	#[ignore = "manually run this test to hear to the resulting sound"]
 	fn test_440() {
-		let oscillator = OscillatorBuilder::<44100, 1>::new(
-			vec![Harmonic::new(Complex32::ONE, 440.)],
-			false,
-			None,
-		)
-		.build()
-		.unwrap();
+		let mut oscillator = Oscillator::new(SamplingCtx::new(SampleRate(44100), 1), None).unwrap();
+		oscillator.set_harmonics(vec![Harmonic::new(Complex32::ONE, 440.)]);
+
 		sleep(Duration::from_secs(10));
 		assert!(!oscillator.mute());
 	}
 	#[test]
 	#[ignore = "manually run this test to hear to the resulting sound"]
 	fn test_440_333() {
-		let _oscillator = OscillatorBuilder::<44100, 1>::new(
-			vec![
-				Harmonic::new(Complex32::ONE, 440.),
-				Harmonic::new(Complex32::ONE, 333.),
-			],
-			false,
-			None,
-		)
-		.build()
-		.unwrap();
+		let mut oscillator = Oscillator::new(SamplingCtx::new(SampleRate(44100), 1), None).unwrap();
+		oscillator.set_harmonics(vec![
+			Harmonic::new(Complex32::ONE, 440.),
+			Harmonic::new(Complex32::ONE, 333.),
+		]);
 		sleep(Duration::from_secs(10));
 	}
 
 	#[test]
 	fn test_frequencies_to_samples() {
-		let samples = harmonics_to_samples(44100, 100, &[Harmonic::new(Complex32::ONE, 440.)]);
+		let samples = harmonics_to_samples(
+			SampleRate(44100),
+			100,
+			&[Harmonic::new(Complex32::ONE, 440.)],
+		);
 		assert!((samples[0] - 1.0).abs() < f32::EPSILON);
 		assert!((samples[1] - 1.0).abs() > f32::EPSILON);
 	}
@@ -264,13 +238,8 @@ mod tests {
 	#[test]
 	#[ignore = "manually run this test to check the phase of the output with a spectrum analyzer"]
 	fn test_phase() {
-		let mut oscillator = OscillatorBuilder::<8000, 1>::new(
-			vec![Harmonic::new(Complex32::from_polar(1., 0.), 2000.0)],
-			false,
-			None,
-		)
-		.build()
-		.unwrap();
+		let mut oscillator = Oscillator::new(SamplingCtx::new(SampleRate(8000), 1), None).unwrap();
+		oscillator.set_harmonics(vec![Harmonic::new(Complex32::from_polar(1., 0.), 2000.0)]);
 		sleep(Duration::from_secs(50));
 		oscillator.set_harmonics(vec![Harmonic::new(Complex32::from_polar(1., PI), 2000.0)]);
 		sleep(Duration::from_secs(5));
@@ -279,7 +248,7 @@ mod tests {
 	#[test]
 	fn test_harmonic_phases() {
 		const N: usize = 10;
-		const SAMPLE_RATE: usize = 44100;
+		const SAMPLE_RATE: SampleRate = SampleRate(44100);
 		const SAMPLES_PER_WINDOW: usize = 64;
 		let dft_ctx = DftCtx::new(SAMPLE_RATE, SAMPLES_PER_WINDOW);
 
@@ -297,12 +266,9 @@ mod tests {
 
 			let mut signal = vec![0.; impulse.len() * N];
 			for i in 0..N {
-				signal[i * impulse.len()
-					..(i + 1) * impulse.len()]
-					.copy_from_slice(&impulse);
+				signal[i * impulse.len()..(i + 1) * impulse.len()].copy_from_slice(&impulse);
 			}
-			let mut goertzel =
-				GoertzelAnalyzer::new(dft_ctx, vec![bin], &HannWindow);
+			let mut goertzel = GoertzelAnalyzer::new(dft_ctx, vec![bin], &HannWindow);
 			let h = goertzel
 				.analyze(&signal[0..impulse.len()])
 				.first()
@@ -318,10 +284,7 @@ mod tests {
 
 			for i in 1..N {
 				let h = goertzel
-					.analyze(
-						&signal[i * impulse.len()
-							..(i + 1) * impulse.len()],
-					)
+					.analyze(&signal[i * impulse.len()..(i + 1) * impulse.len()])
 					.first()
 					.copied()
 					.unwrap();

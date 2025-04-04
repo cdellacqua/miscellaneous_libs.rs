@@ -9,43 +9,39 @@ use mutex_ext::LockExt;
 use crate::{
 	buffers::InterleavedAudioBuffer,
 	common::{AudioStreamBuilderError, AudioStreamSamplingState},
-	NOfFrames,
+	NOfFrames, SampleRate, SamplingCtx,
 };
 
-use super::{InputStream, InputStreamBuilder};
+use super::InputStream;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AudioRecorderBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	capacity: NOfFrames<SAMPLE_RATE, N_CH>,
-	device_name: Option<String>,
+pub struct AudioRecorder {
+	capacity: NOfFrames,
+	shared: Arc<Mutex<RecorderState>>,
+	base_stream: InputStream,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RATE, N_CH> {
-	#[must_use]
-	pub const fn new(capacity: NOfFrames<SAMPLE_RATE, N_CH>, device_name: Option<String>) -> Self {
-		Self {
-			capacity,
-			device_name,
-		}
-	}
-
-	/// Build and start recording the input stream
+impl AudioRecorder {
+	/// Build and start sampling an input stream
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	pub fn build(&self) -> Result<AudioRecorder<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let buffer_size = self.capacity.n_of_samples();
+	pub fn new(
+		sampling_ctx: SamplingCtx,
+		capacity: NOfFrames,
+		device_name: Option<&str>,
+	) -> Result<Self, AudioStreamBuilderError> {
+		let buffer_size = sampling_ctx.n_of_samples(capacity);
 		let shared = Arc::new(Mutex::new(RecorderState {
 			buffer_size,
 			buffer: Vec::with_capacity(buffer_size),
 		}));
 
-		Ok(AudioRecorder::new(
-			self.capacity,
-			shared.clone(),
-			InputStreamBuilder::new(
-				self.device_name.clone(),
-				Box::new(move |chunk| {
+		let base_stream = InputStream::new(
+			sampling_ctx,
+			device_name,
+			Box::new({
+				let shared = shared.clone();
+				move |chunk| {
 					shared.with_lock_mut(|shared| {
 						shared.buffer.extend_from_slice(
 							&chunk.raw_buffer()[0..chunk
@@ -54,31 +50,16 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorderBuilder<SAMPLE_RA
 								.min(shared.buffer_size - chunk.raw_buffer().len())],
 						);
 					});
-				}),
-				None,
-			)
-			.build()?,
-		))
-	}
-}
+				}
+			}),
+			None,
+		)?;
 
-pub struct AudioRecorder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	capacity: NOfFrames<SAMPLE_RATE, N_CH>,
-	shared: Arc<Mutex<RecorderState<SAMPLE_RATE, N_CH>>>,
-	base_stream: InputStream<SAMPLE_RATE, N_CH>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_CH> {
-	fn new(
-		capacity: NOfFrames<SAMPLE_RATE, N_CH>,
-		shared: Arc<Mutex<RecorderState<SAMPLE_RATE, N_CH>>>,
-		base_stream: InputStream<SAMPLE_RATE, N_CH>,
-	) -> Self {
-		Self {
+		Ok(Self {
 			capacity,
 			shared,
 			base_stream,
-		}
+		})
 	}
 
 	#[must_use]
@@ -87,31 +68,42 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 	}
 
 	#[must_use]
-	pub fn take(&mut self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		InterleavedAudioBuffer::new(self.shared.with_lock_mut(|shared| {
-			replace(&mut shared.buffer, Vec::with_capacity(shared.buffer_size))
-		}))
+	pub fn take(&mut self) -> InterleavedAudioBuffer<Vec<f32>> {
+		InterleavedAudioBuffer::new(
+			self.sampling_ctx(),
+			self.shared.with_lock_mut(|shared| {
+				replace(&mut shared.buffer, Vec::with_capacity(shared.buffer_size))
+			}),
+		)
 	}
 
 	/// Get the latest snapshot
 	#[must_use]
-	pub fn snapshot(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		InterleavedAudioBuffer::new(self.shared.with_lock(|shared| shared.buffer.clone()))
+	pub fn snapshot(&self) -> InterleavedAudioBuffer<Vec<f32>> {
+		InterleavedAudioBuffer::new(
+			self.sampling_ctx(),
+			self.shared.with_lock(|shared| shared.buffer.clone()),
+		)
 	}
 
 	#[must_use]
-	pub fn capacity(&self) -> NOfFrames<SAMPLE_RATE, N_CH> {
+	pub fn capacity(&self) -> NOfFrames {
 		self.capacity
 	}
 
 	#[must_use]
-	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
+	pub fn sampling_ctx(&self) -> SamplingCtx {
+		self.base_stream.sampling_ctx()
 	}
 
 	#[must_use]
-	pub fn n_of_channels(&self) -> usize {
-		N_CH
+	pub fn sample_rate(&self) -> SampleRate {
+		self.base_stream.sample_rate()
+	}
+
+	#[must_use]
+	pub fn n_ch(&self) -> usize {
+		self.base_stream.n_ch()
 	}
 
 	#[must_use]
@@ -120,7 +112,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioRecorder<SAMPLE_RATE, N_C
 	}
 }
 
-struct RecorderState<const SAMPLE_RATE: usize, const N_CH: usize> {
+struct RecorderState {
 	buffer_size: usize,
 	buffer: Vec<f32>,
 }
@@ -129,20 +121,23 @@ struct RecorderState<const SAMPLE_RATE: usize, const N_CH: usize> {
 mod tests {
 	use std::{thread::sleep, time::Duration};
 
-	use crate::output::AudioPlayerBuilder;
+	use crate::output::AudioPlayer;
 
 	use super::*;
 
 	#[test]
 	#[ignore = "manually record and listen to the registered audio file"]
 	fn test_manual() {
-		let mut recorder =
-			AudioRecorderBuilder::<44100, 2>::new(Duration::from_secs(2).into(), None)
-				.build()
-				.unwrap();
-		sleep(recorder.capacity().into());
+		let sampling_ctx = SamplingCtx::new(SampleRate(44100), 2);
+		let mut recorder = AudioRecorder::new(
+			sampling_ctx,
+			sampling_ctx.to_n_of_frames(Duration::from_secs(2)),
+			None,
+		)
+		.unwrap();
+		sleep(sampling_ctx.to_duration(recorder.capacity()));
 		let snapshot = recorder.take();
-		let mut player = AudioPlayerBuilder::<44100, 2>::new(None).build().unwrap();
+		let mut player = AudioPlayer::new(sampling_ctx, None).unwrap();
 		assert_eq!(player.state(), AudioStreamSamplingState::Sampling);
 		player.play(snapshot);
 	}

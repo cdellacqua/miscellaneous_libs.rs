@@ -17,12 +17,12 @@ mod tests {
 			windowing_fns::HannWindow,
 			DftCtx, Harmonic,
 		},
-		output::harmonics_to_samples,
+		output::harmonics_to_samples, SampleRate,
 	};
 
 	#[test]
 	fn cross_check_goertzel_and_stft() {
-		let dft_ctx = DftCtx::new(44100, 44100);
+		let dft_ctx = DftCtx::new(SampleRate(44100), 44100);
 
 		let frequency = 440.;
 		let frequency_bin = dft_ctx.frequency_to_bin(frequency);
@@ -66,7 +66,7 @@ mod tests {
 			"goertzel and stft should yield the same frequency result"
 		);
 		assert!(
-			(stft_result.power() - goertzel_result.power()).abs() < 0.01,
+			(stft_result.amplitude() - goertzel_result.amplitude()).abs() < 0.01,
 			"goertzel and stft should yield a similar amplitude result"
 		);
 		assert!(

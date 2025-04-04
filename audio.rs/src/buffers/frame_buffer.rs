@@ -5,39 +5,30 @@ use std::{
 	ops::{Index, IndexMut},
 };
 
-#[derive(Debug, Clone, Copy)]
-pub struct AudioFrame<const N_CH: usize, Samples: Borrow<[f32; N_CH]>>(Samples);
+#[derive(Debug)]
+pub struct AudioFrame<Samples: Borrow<[f32]>>(Samples);
 
-impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> {
-	/// # Panics
-	/// - if the buffer size doesn't correspond to the number of channels.
+impl<Samples: Borrow<[f32]>> AudioFrame<Samples> {
 	#[must_use]
 	pub fn new(samples: Samples) -> Self {
-		assert_eq!(samples.borrow().len(), N_CH);
-
 		AudioFrame(samples)
 	}
 
 	#[must_use]
-	pub fn copied(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
-		self.cloned()
-	}
-
-	#[must_use]
-	pub fn samples(&self) -> &[f32; N_CH] {
+	pub fn samples(&self) -> &[f32] {
 		self.0.borrow()
 	}
 
 	#[must_use]
-	pub fn cloned(&self) -> AudioFrame<N_CH, [f32; N_CH]> {
-		AudioFrame(*self.0.borrow())
+	pub fn cloned(&self) -> AudioFrame<Vec<f32>> {
+		AudioFrame(self.0.borrow().to_vec())
 	}
 
 	#[must_use]
 	pub fn to_mono(&self) -> f32 {
-		let samples: &[f32; N_CH] = self.0.borrow();
+		let samples: &[f32] = self.0.borrow();
 
-		if N_CH == 1 {
+		if samples.len() == 1 {
 			samples[0]
 		} else {
 			// Values are usually from -1..1 and channels are usually single digit numbers,
@@ -47,35 +38,31 @@ impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AudioFrame<N_CH, Samples> 
 	}
 
 	#[must_use]
-	pub fn n_of_channels(&self) -> usize {
-		N_CH
+	pub fn n_ch(&self) -> usize {
+		self.samples().len()
 	}
 }
 
-impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> AudioFrame<N_CH, Samples> {
+impl<Samples: BorrowMut<[f32]>> AudioFrame<Samples> {
 	#[must_use]
-	pub fn samples_mut(&mut self) -> &mut [f32; N_CH] {
+	pub fn samples_mut(&mut self) -> &mut [f32] {
 		self.0.borrow_mut()
 	}
 }
 
-impl<const N_CH: usize, A: Borrow<[f32; N_CH]>, B: Borrow<[f32; N_CH]>>
-	PartialEq<AudioFrame<N_CH, B>> for AudioFrame<N_CH, A>
-{
-	fn eq(&self, other: &AudioFrame<N_CH, B>) -> bool {
+impl<A: Borrow<[f32]>, B: Borrow<[f32]>> PartialEq<AudioFrame<B>> for AudioFrame<A> {
+	fn eq(&self, other: &AudioFrame<B>) -> bool {
 		self.0.borrow() == other.0.borrow()
 	}
 }
 
-impl<const N_CH: usize, A: Borrow<[f32; N_CH]>, B: Borrow<[f32; N_CH]>>
-	PartialOrd<AudioFrame<N_CH, B>> for AudioFrame<N_CH, A>
-{
-	fn partial_cmp(&self, other: &AudioFrame<N_CH, B>) -> Option<std::cmp::Ordering> {
+impl<A: Borrow<[f32]>, B: Borrow<[f32]>> PartialOrd<AudioFrame<B>> for AudioFrame<A> {
+	fn partial_cmp(&self, other: &AudioFrame<B>) -> Option<std::cmp::Ordering> {
 		self.0.borrow().partial_cmp(other.0.borrow())
 	}
 }
 
-impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> Index<usize> for AudioFrame<N_CH, Samples> {
+impl<Samples: Borrow<[f32]>> Index<usize> for AudioFrame<Samples> {
 	type Output = f32;
 
 	fn index(&self, index: usize) -> &Self::Output {
@@ -83,26 +70,20 @@ impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> Index<usize> for AudioFram
 	}
 }
 
-impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> IndexMut<usize>
-	for AudioFrame<N_CH, Samples>
-{
+impl<Samples: BorrowMut<[f32]>> IndexMut<usize> for AudioFrame<Samples> {
 	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
 		&mut self.0.borrow_mut()[index]
 	}
 }
 
-impl<const N_CH: usize, Samples: Borrow<[f32; N_CH]>> AsRef<[f32; N_CH]>
-	for AudioFrame<N_CH, Samples>
-{
-	fn as_ref(&self) -> &[f32; N_CH] {
+impl<Samples: Borrow<[f32]>> AsRef<[f32]> for AudioFrame<Samples> {
+	fn as_ref(&self) -> &[f32] {
 		self.0.borrow()
 	}
 }
 
-impl<const N_CH: usize, Samples: BorrowMut<[f32; N_CH]>> AsMut<[f32; N_CH]>
-	for AudioFrame<N_CH, Samples>
-{
-	fn as_mut(&mut self) -> &mut [f32; N_CH] {
+impl<Samples: BorrowMut<[f32]>> AsMut<[f32]> for AudioFrame<Samples> {
+	fn as_mut(&mut self) -> &mut [f32] {
 		self.0.borrow_mut()
 	}
 }
@@ -113,7 +94,7 @@ mod tests {
 
 	#[test]
 	fn test_copied() {
-		let snapshot = AudioFrame::new(&[1_f32, 2_f32]);
-		let _a: AudioFrame<2, [f32; 2]> = snapshot.copied();
+		let snapshot = AudioFrame::new([1_f32, 2_f32].as_slice());
+		let _a: AudioFrame<Vec<f32>> = snapshot.cloned();
 	}
 }

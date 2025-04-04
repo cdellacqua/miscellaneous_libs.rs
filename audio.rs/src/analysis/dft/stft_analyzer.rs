@@ -104,7 +104,7 @@ mod tests {
 
 	use crate::{
 		analysis::{windowing_fns::HannWindow, Harmonic},
-		output::harmonics_to_samples,
+		output::harmonics_to_samples, SampleRate,
 	};
 
 	use super::*;
@@ -112,7 +112,7 @@ mod tests {
 	#[test]
 	#[allow(clippy::cast_precision_loss)]
 	fn stft_peaks_at_frequency_bin() {
-		let dft_ctx = DftCtx::new(44100, 44100);
+		let dft_ctx = DftCtx::new(SampleRate(44100), 44100);
 
 		let mut stft_analyzer = StftAnalyzer::new(dft_ctx, &HannWindow);
 		let bins = dft_ctx.bins();
@@ -144,7 +144,7 @@ mod tests {
 	#[test]
 	#[allow(clippy::cast_precision_loss)]
 	fn stft_peaks_at_frequency_bin_440() {
-		let dft_ctx = DftCtx::new(44100, 100);
+		let dft_ctx = DftCtx::new(SampleRate(44100), 100);
 
 		let mut stft_analyzer = StftAnalyzer::new(dft_ctx, &HannWindow);
 		let signal = harmonics_to_samples(
@@ -164,7 +164,7 @@ mod tests {
 	#[test]
 	#[allow(clippy::cast_precision_loss)]
 	fn stft_phase() {
-		let dft_ctx = DftCtx::new(44100, 4410);
+		let dft_ctx = DftCtx::new(SampleRate(44100), 4410);
 
 		let bin = 50;
 

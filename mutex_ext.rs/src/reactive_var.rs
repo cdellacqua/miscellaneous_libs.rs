@@ -2,8 +2,14 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 
 use crate::CondvarExt;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ReactiveCondvar<T>(Arc<(Mutex<T>, Condvar)>);
+
+impl<T> Clone for ReactiveCondvar<T> {
+	fn clone(&self) -> Self {
+		Self(self.0.clone())
+	}
+}
 
 impl<T> ReactiveCondvar<T> {
 	pub fn new(initial_value: T) -> Self {
@@ -16,6 +22,16 @@ impl<T> ReactiveCondvar<T> {
 
 	pub fn notify_one(&self) {
 		self.0 .1.notify_one();
+	}
+
+	#[must_use]
+	pub fn mutex(&self) -> &Mutex<T> {
+		&self.0 .0
+	}
+
+	#[must_use]
+	pub fn condvar(&self) -> &Condvar {
+		&self.0 .1
 	}
 }
 

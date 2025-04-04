@@ -1,56 +1,52 @@
-use std::{
-	borrow::{Borrow, BorrowMut},
-	vec,
-};
+use std::borrow::{Borrow, BorrowMut};
 
-use crate::NOfFrames;
+use crate::{NOfFrames, SampleRate, SamplingCtx};
 
-use super::{
-	frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut,
-	InterleavedAudioBufferIterOwned,
-};
+use super::{frame_buffer::AudioFrame, InterleavedAudioBufferIter, InterleavedAudioBufferIterMut};
 
 // TODO: get_channel() -> Vec<f32>
 
-#[derive(Debug, Clone)]
-pub struct InterleavedAudioBuffer<
-	const SAMPLE_RATE: usize,
-	const N_CH: usize,
-	Buffer: Borrow<[f32]>,
-> {
+#[derive(Debug)]
+pub struct InterleavedAudioBuffer<Buffer: Borrow<[f32]>> {
+	sampling_ctx: SamplingCtx,
 	raw_buffer: Buffer,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
-	InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-{
+impl<Buffer: Borrow<[f32]>> InterleavedAudioBuffer<Buffer> {
 	/// Creates a new [`InterleavedAudioBuffer`].
 	///
 	/// # Panics
 	/// - if the buffer size is not a multiple of the number of channels.
 	#[must_use]
-	pub fn new(raw_buffer: Buffer) -> Self {
+	pub fn new(sampling_ctx: SamplingCtx, raw_buffer: Buffer) -> Self {
 		assert_eq!(
-			raw_buffer.borrow().len() % N_CH,
+			raw_buffer.borrow().len() % sampling_ctx.n_ch(),
 			0,
 			"buffer size must be a multiple of the number of channels"
 		);
-		Self { raw_buffer }
+		Self {
+			sampling_ctx,
+			raw_buffer,
+		}
 	}
 
 	#[must_use]
 	#[allow(clippy::missing_panics_doc)] // REASON: invariant guaranteed by `assert_eq` in the constructor
-	pub fn at(&self, index: usize) -> AudioFrame<N_CH, &[f32; N_CH]> {
+	pub fn at(&self, index: usize) -> AudioFrame<&[f32]> {
 		AudioFrame::new(
-			self.raw_buffer.borrow()[index * N_CH..(index + 1) * N_CH]
+			self.raw_buffer.borrow()[index * self.n_ch()..(index + 1) * self.n_ch()]
 				.try_into()
 				.unwrap(),
 		)
 	}
 
+	/// # Panics
+	/// - if the two signals are incompatible (different number of channels or different sample rate)
 	#[must_use]
-	pub fn concat(&self, other: &Self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		InterleavedAudioBuffer::new({
+	pub fn concat(&self, other: &Self) -> InterleavedAudioBuffer<Vec<f32>> {
+		assert_eq!(self.n_ch(), other.n_ch());
+		assert_eq!(self.sample_rate(), other.sample_rate());
+		InterleavedAudioBuffer::new(self.sampling_ctx, {
 			let mut base = self.raw_buffer.borrow().to_vec();
 			base.extend(other.raw_buffer.borrow());
 			base
@@ -58,37 +54,33 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	}
 
 	#[must_use]
-	pub fn iter(&self) -> InterleavedAudioBufferIter<SAMPLE_RATE, N_CH, Buffer> {
+	pub fn iter(&self) -> InterleavedAudioBufferIter<Buffer> {
 		InterleavedAudioBufferIter::new(self)
 	}
 
 	#[must_use]
-	pub fn iter_owned(self) -> InterleavedAudioBufferIterOwned<SAMPLE_RATE, N_CH, Buffer> {
-		InterleavedAudioBufferIterOwned::new(self)
-	}
-
-	#[must_use]
-	pub fn into_raw(self) -> (usize, Buffer) {
-		(N_CH, self.raw_buffer)
+	pub fn into_raw(self) -> (SamplingCtx, Buffer) {
+		(self.sampling_ctx, self.raw_buffer)
 	}
 
 	/// The number of frames corresponds to the number of sampling points in time, regardless of the number
 	/// of channels.
 	#[must_use]
-	pub fn n_of_frames(&self) -> NOfFrames<SAMPLE_RATE, N_CH> {
-		NOfFrames::new(self.raw_buffer.borrow().len() / N_CH)
+	pub fn n_of_frames(&self) -> NOfFrames {
+		self.sampling_ctx
+			.samples_to_frames(self.raw_buffer.borrow().len())
 	}
 
 	#[must_use]
-	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
+	pub fn sample_rate(&self) -> SampleRate {
+		self.sampling_ctx.sample_rate()
 	}
 
 	/// Converts this interleaved collection to a raw buffer containing the samples of a mono track.
 	/// Samples in the mono track are the average of all the channel samples for each point in time.
 	#[must_use]
 	pub fn to_mono(&self) -> Vec<f32> {
-		if N_CH == 1 {
+		if self.n_ch() == 1 {
 			self.raw_buffer.borrow().to_vec()
 		} else {
 			self.iter().map(|frame| frame.to_mono()).collect()
@@ -96,8 +88,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	}
 
 	#[must_use]
-	pub fn n_of_channels(&self) -> usize {
-		N_CH
+	pub fn n_ch(&self) -> usize {
+		self.sampling_ctx.n_ch()
 	}
 
 	#[must_use]
@@ -106,66 +98,25 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>>
 	}
 
 	#[must_use]
-	pub fn cloned(&self) -> InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>> {
-		InterleavedAudioBuffer::new(self.raw_buffer.borrow().to_vec())
+	pub fn cloned(&self) -> InterleavedAudioBuffer<Vec<f32>> {
+		InterleavedAudioBuffer::new(self.sampling_ctx, self.raw_buffer.borrow().to_vec())
 	}
 }
 
-impl<const SAMPLE_RATE: usize, Buffer: Borrow<[f32]>>
-	InterleavedAudioBuffer<SAMPLE_RATE, 1, Buffer>
-{
-	/// Same as `raw_buffer` but clearer in the intent and guaranteed
-	/// to exist only when `N_CH` equals 1.
-	#[must_use]
-	pub fn as_mono(&self) -> &[f32] {
-		self.raw_buffer.borrow()
-	}
-
-	/// Create a new [`InterleavedAudioBuffer`] replicating the mono signal for each
-	/// of the specified output channels.
-	pub fn multiply<const OUT_N_CH: usize>(
-		&self,
-	) -> InterleavedAudioBuffer<SAMPLE_RATE, OUT_N_CH, Vec<f32>> {
-		let mut raw_buffer = vec![0f32; self.n_of_frames().inner() * OUT_N_CH];
-		for (channels, mono_sample) in raw_buffer.chunks_mut(OUT_N_CH).zip(self.as_mono()) {
-			channels.fill(*mono_sample);
-		}
-		InterleavedAudioBuffer::new(raw_buffer)
-	}
-}
-
-impl<const SAMPLE_RATE: usize, Buffer: BorrowMut<[f32]>>
-	InterleavedAudioBuffer<SAMPLE_RATE, 1, Buffer>
-{
-	/// Same as `raw_buffer_mut` but clearer in the intent and guaranteed
-	/// to exist only when `N_CH` equals 1
-	#[must_use]
-	pub fn as_mono_mut(&mut self) -> &mut [f32] {
-		self.raw_buffer.borrow_mut()
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
-	InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-{
+impl<Buffer: BorrowMut<[f32]>> InterleavedAudioBuffer<Buffer> {
 	/// # Panics
 	/// - if the index is out of bound.
 	#[must_use]
-	pub fn at_mut(&mut self, index: usize) -> AudioFrame<N_CH, &mut [f32; N_CH]> {
-		assert!(index < self.n_of_frames().inner());
+	pub fn at_mut(&mut self, index: usize) -> AudioFrame<&mut [f32]> {
+		assert!(index < self.n_of_frames().0);
 
-		// SAFETY:
-		// - array size invariant guaranteed by `assert_eq` in the constructor of the buffer
-		// - lifetime compatibility guaranteed by compatible borrows.
-		AudioFrame::new(unsafe {
-			&mut *self.raw_buffer.borrow_mut()[index * N_CH..(index + 1) * N_CH]
-				.as_mut_ptr()
-				.cast::<[_; N_CH]>()
-		})
+		let n_ch = self.n_ch();
+
+		AudioFrame::new(&mut self.raw_buffer.borrow_mut()[index * n_ch..(index + 1) * n_ch])
 	}
 
 	#[must_use]
-	pub fn iter_mut(&mut self) -> InterleavedAudioBufferIterMut<SAMPLE_RATE, N_CH, Buffer> {
+	pub fn iter_mut(&mut self) -> InterleavedAudioBufferIterMut<Buffer> {
 		InterleavedAudioBufferIterMut::new(self)
 	}
 
@@ -175,112 +126,47 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>>
 	}
 }
 
-impl<'a, const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>> IntoIterator
-	for &'a InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
+impl<BufferA: Borrow<[f32]>, BufferB: Borrow<[f32]>> PartialEq<InterleavedAudioBuffer<BufferB>>
+	for InterleavedAudioBuffer<BufferA>
 {
-	type IntoIter = InterleavedAudioBufferIter<'a, SAMPLE_RATE, N_CH, Buffer>;
-	type Item = AudioFrame<N_CH, &'a [f32; N_CH]>;
+	fn eq(&self, other: &InterleavedAudioBuffer<BufferB>) -> bool {
+		self.sampling_ctx == other.sampling_ctx
+			&& self.raw_buffer.borrow() == other.raw_buffer.borrow()
+	}
+}
+
+impl<'a, Buffer: Borrow<[f32]>> IntoIterator for &'a InterleavedAudioBuffer<Buffer> {
+	type Item = AudioFrame<&'a [f32]>;
+	type IntoIter = InterleavedAudioBufferIter<'a, Buffer>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter()
 	}
 }
 
-impl<'a, const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>> IntoIterator
-	for &'a mut InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-{
-	type IntoIter = InterleavedAudioBufferIterMut<'a, SAMPLE_RATE, N_CH, Buffer>;
-	type Item = AudioFrame<N_CH, &'a mut [f32; N_CH]>;
+impl<'a, Buffer: BorrowMut<[f32]>> IntoIterator for &'a mut InterleavedAudioBuffer<Buffer> {
+	type Item = AudioFrame<&'a mut [f32]>;
+	type IntoIter = InterleavedAudioBufferIterMut<'a, Buffer>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.iter_mut()
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>> IntoIterator
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
+impl<FrameBuffer: Borrow<[f32]>> Extend<AudioFrame<FrameBuffer>>
+	for InterleavedAudioBuffer<Vec<f32>>
 {
-	type IntoIter = InterleavedAudioBufferIterOwned<SAMPLE_RATE, N_CH, Buffer>;
-	type Item = AudioFrame<N_CH, [f32; N_CH]>;
-	fn into_iter(self) -> Self::IntoIter {
-		self.iter_owned()
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH]>>
-	FromIterator<AudioFrame<N_CH, FrameBuffer>>
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>
-{
-	fn from_iter<T: IntoIterator<Item = AudioFrame<N_CH, FrameBuffer>>>(iter: T) -> Self {
-		Self::new(
-			iter.into_iter()
-				.flat_map(|frame| (*frame.samples()).into_iter())
-				.collect::<Vec<_>>(),
-		)
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize, FrameBuffer: Borrow<[f32; N_CH]>>
-	Extend<AudioFrame<N_CH, FrameBuffer>> for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>
-{
-	fn extend<T: IntoIterator<Item = AudioFrame<N_CH, FrameBuffer>>>(&mut self, iter: T) {
-		self.raw_buffer.extend(
-			iter.into_iter()
-				.flat_map(|frame| (*frame.samples()).into_iter()),
-		);
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize, A: Borrow<[f32]>, B: Borrow<[f32]>>
-	PartialEq<InterleavedAudioBuffer<SAMPLE_RATE, N_CH, B>>
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, A>
-{
-	fn eq(&self, other: &InterleavedAudioBuffer<SAMPLE_RATE, N_CH, B>) -> bool {
-		self.raw_buffer.borrow() == other.raw_buffer.borrow()
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize, A: Borrow<[f32]>, B: Borrow<[f32]>>
-	PartialOrd<InterleavedAudioBuffer<SAMPLE_RATE, N_CH, B>>
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, A>
-{
-	fn partial_cmp(
-		&self,
-		other: &InterleavedAudioBuffer<SAMPLE_RATE, N_CH, B>,
-	) -> Option<std::cmp::Ordering> {
+	fn extend<T: IntoIterator<Item = AudioFrame<FrameBuffer>>>(&mut self, iter: T) {
 		self.raw_buffer
-			.borrow()
-			.partial_cmp(other.raw_buffer.borrow())
+			.extend(iter.into_iter().flat_map(|frame| frame.samples().to_vec()));
 	}
 }
 
-// impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>> Index<usize>
-// 	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-// {
-// 	type Output = f32;
-
-// 	fn index(&self, index: usize) -> &Self::Output {
-// 		&self.raw_buffer.borrow()[index]
-// 	}
-// }
-
-// impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>> IndexMut<usize>
-// 	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-// {
-// 	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-// 		&mut self.raw_buffer.borrow_mut()[index]
-// 	}
-// }
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: Borrow<[f32]>> AsRef<[f32]>
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-{
+impl<Buffer: Borrow<[f32]>> AsRef<[f32]> for InterleavedAudioBuffer<Buffer> {
 	fn as_ref(&self) -> &[f32] {
 		self.raw_buffer.borrow()
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize, Buffer: BorrowMut<[f32]>> AsMut<[f32]>
-	for InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Buffer>
-{
+impl<Buffer: BorrowMut<[f32]>> AsMut<[f32]> for InterleavedAudioBuffer<Buffer> {
 	fn as_mut(&mut self) -> &mut [f32] {
 		self.raw_buffer.borrow_mut()
 	}
@@ -294,19 +180,66 @@ mod tests {
 
 	#[test]
 	fn test_snapshot_iterator() {
+		let sampling_ctx = SamplingCtx::new(44100.into(), 2);
 		let snapshot =
-			InterleavedAudioBuffer::<44100, 2, _>::new(&[1., 2., 3., 4., 5., 6., 7., 8.][..]);
+			InterleavedAudioBuffer::new(sampling_ctx, [1., 2., 3., 4., 5., 6., 7., 8.].as_slice());
 		let mut iter = snapshot.iter();
 
-		assert_eq!(iter.next(), Some(AudioFrame::new(&[1.0f32, 2.0f32])));
-		assert_eq!(iter.next(), Some(AudioFrame::new(&[3.0f32, 4.0f32])));
-		assert_eq!(iter.next(), Some(AudioFrame::new(&[5.0f32, 6.0f32])));
-		assert_eq!(iter.next(), Some(AudioFrame::new(&[7.0f32, 8.0f32])));
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([1.0f32, 2.0f32].as_slice()))
+		);
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([3.0f32, 4.0f32].as_slice()))
+		);
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([5.0f32, 6.0f32].as_slice()))
+		);
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([7.0f32, 8.0f32].as_slice()))
+		);
 		assert_eq!(iter.next(), None);
 	}
+
+	#[test]
+	fn test_snapshot_mut_iterator() {
+		let sampling_ctx = SamplingCtx::new(44100.into(), 2);
+		let mut raw_buffer = [1., 2., 3., 4., 5., 6., 7., 8.];
+		let mut snapshot = InterleavedAudioBuffer::new(sampling_ctx, raw_buffer.as_mut_slice());
+
+		for mut frame in &mut snapshot {
+			frame[0] -= 10.;
+			frame[1] += 10.;
+		}
+		let mut iter = snapshot.iter();
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([-10. + 1.0f32, 10. + 2.0f32].as_slice()))
+		);
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([-10. + 3.0f32, 10. + 4.0f32].as_slice()))
+		);
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([-10. + 5.0f32, 10. + 6.0f32].as_slice()))
+		);
+		assert_eq!(
+			iter.next(),
+			Some(AudioFrame::new([-10. + 7.0f32, 10. + 8.0f32].as_slice()))
+		);
+		assert_eq!(iter.next(), None);
+	}
+
 	#[test]
 	fn test_snapshot_indexing() {
-		let snapshot = InterleavedAudioBuffer::<44100, 2, _>::new([1., 2., 3., 4., 5., 6., 7., 8.]);
+		let snapshot = InterleavedAudioBuffer::new(
+			SamplingCtx::new(SampleRate(44100), 2),
+			[1., 2., 3., 4., 5., 6., 7., 8.],
+		);
 		assert_eq!(snapshot.at(0), AudioFrame::new([1., 2.]));
 		assert_eq!(snapshot.at(1), AudioFrame::new([3., 4.]));
 		assert_eq!(snapshot.at(2), AudioFrame::new([5., 6.]));
@@ -314,7 +247,10 @@ mod tests {
 	}
 	#[test]
 	fn test_from_mono() {
-		let snapshot = InterleavedAudioBuffer::<44100, 1, _>::new([1., 2., 3., 4., 5., 6., 7., 8.]);
+		let snapshot = InterleavedAudioBuffer::new(
+			SamplingCtx::new(SampleRate(44100), 1),
+			[1., 2., 3., 4., 5., 6., 7., 8.],
+		);
 		assert_eq!(snapshot.at(0), AudioFrame::new([1.]));
 		assert_eq!(snapshot.at(1), AudioFrame::new([2.]));
 		assert_eq!(snapshot.at(2), AudioFrame::new([3.]));
@@ -326,9 +262,10 @@ mod tests {
 	}
 	#[test]
 	fn test_duration() {
-		let snapshot = InterleavedAudioBuffer::<44100, 1, _>::new(vec![0.; 4410]);
+		let sampling_ctx = SamplingCtx::new(SampleRate(44100), 1);
+		let snapshot = InterleavedAudioBuffer::new(sampling_ctx, vec![0.; 4410]);
 		assert_eq!(
-			snapshot.n_of_frames().to_duration(),
+			sampling_ctx.to_duration(snapshot.n_of_frames()),
 			Duration::from_millis(100)
 		);
 	}

@@ -1,51 +1,44 @@
 #![allow(clippy::cast_precision_loss)]
 
-use std::{
-	sync::{Arc, Condvar, Mutex},
-	thread::sleep,
-	time::Duration,
-};
+use std::{thread::sleep, time::Duration};
 
-use mutex_ext::LockExt;
+use mutex_ext::{CondvarExt, LockExt, ReactiveCondvar};
 
 use crate::{
 	buffers::InterleavedAudioBuffer, AudioStreamBuilderError, AudioStreamSamplingState, NOfFrames,
+	SampleRate, SamplingCtx,
 };
 
-use super::{OutputStream, OutputStreamBuilder};
+use super::OutputStream;
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct AudioPlayerBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	device_name: Option<String>,
+pub struct AudioPlayer {
+	shared: ReactiveCondvar<PlayerState>,
+	base_stream: OutputStream,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE, N_CH> {
-	#[must_use]
-	pub const fn new(device_name: Option<String>) -> Self {
-		Self { device_name }
-	}
-
-	/// Build and start output stream
+impl AudioPlayer {
+	/// Build and start sampling an input stream
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	pub fn build(&self) -> Result<AudioPlayer<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let shared = Arc::new((
-			Mutex::new(PlayerState {
-				frame_idx: NOfFrames::new(0),
-				signal: InterleavedAudioBuffer::new(vec![]),
-				end_of_signal: true,
-			}),
-			Condvar::default(),
-		));
+	pub fn new(
+		sampling_ctx: SamplingCtx,
+		device_name: Option<&str>,
+	) -> Result<Self, AudioStreamBuilderError> {
+		let shared = ReactiveCondvar::new(PlayerState {
+			frame_idx: NOfFrames(0),
+			signal: InterleavedAudioBuffer::new(sampling_ctx, vec![]),
+			end_of_signal: true,
+		});
 
-		Ok(AudioPlayer::new(
-			shared.clone(),
-			OutputStreamBuilder::new(
-				self.device_name.clone(),
-				Box::new(move |mut chunk| {
+		let base_stream = OutputStream::new(
+			sampling_ctx,
+			device_name,
+			Box::new({
+				let shared = shared.clone();
+				move |mut chunk| {
 					let output_frames = chunk.n_of_frames();
-					let should_notify = shared.0.with_lock_mut(|shared| {
+					let should_notify = shared.mutex().with_lock_mut(|shared| {
 						if shared.end_of_signal {
 							chunk.raw_buffer_mut().fill(0.);
 							false
@@ -53,12 +46,15 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 							let clamped_frames =
 								output_frames.min(shared.signal.n_of_frames() - shared.frame_idx);
 
-							chunk.raw_buffer_mut()[..clamped_frames.n_of_samples()]
+							chunk.raw_buffer_mut()[..sampling_ctx.n_of_samples(clamped_frames)]
 								.copy_from_slice(
-									&shared.signal.raw_buffer()[shared.frame_idx.n_of_samples()
-										..(shared.frame_idx + clamped_frames).n_of_samples()],
+									&shared.signal.raw_buffer()[sampling_ctx
+										.n_of_samples(shared.frame_idx)
+										..sampling_ctx
+											.n_of_samples(shared.frame_idx + clamped_frames)],
 								);
-							chunk.raw_buffer_mut()[clamped_frames.n_of_samples()..].fill(0.);
+							chunk.raw_buffer_mut()[sampling_ctx.n_of_samples(clamped_frames)..]
+								.fill(0.);
 
 							shared.frame_idx += clamped_frames;
 
@@ -71,30 +67,17 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayerBuilder<SAMPLE_RATE
 						}
 					});
 					if should_notify {
-						shared.1.notify_all();
+						shared.condvar().notify_all();
 					}
-				}),
-				None,
-			)
-			.build()?,
-		))
-	}
-}
+				}
+			}),
+			None,
+		)?;
 
-pub struct AudioPlayer<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>,
-	base_stream: OutputStream<SAMPLE_RATE, N_CH>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH> {
-	fn new(
-		shared: Arc<(Mutex<PlayerState<SAMPLE_RATE, N_CH>>, Condvar)>,
-		base_stream: OutputStream<SAMPLE_RATE, N_CH>,
-	) -> Self {
-		Self {
+		Ok(Self {
 			shared,
 			base_stream,
-		}
+		})
 	}
 
 	#[must_use]
@@ -107,21 +90,16 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	/// # Panics
 	/// - if the mutex guarding the state of the associated thread is poisoned
 	pub fn wait(&self) {
-		let guard = self
-			.shared
-			.1
-			.wait_while(self.shared.0.lock().unwrap(), |p| !p.end_of_signal)
-			.unwrap();
-		drop(guard);
+		self.shared.wait_while(|p| !p.end_of_signal);
 		sleep(self.base_stream.avg_output_delay());
 	}
 
 	/// # Panics
 	/// - if the mutex guarding the internal state is poisoned.
-	pub fn set_signal(&mut self, signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>) {
-		self.shared.0.with_lock_mut(|shared| {
+	pub fn set_signal(&mut self, signal: InterleavedAudioBuffer<Vec<f32>>) {
+		self.shared.with_lock_mut(|shared| {
 			shared.signal = signal;
-			shared.frame_idx = NOfFrames::new(0);
+			shared.frame_idx = NOfFrames(0);
 			shared.end_of_signal = false;
 		});
 	}
@@ -130,19 +108,24 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	///
 	/// Note: the wait time is based on when the iterator is exhausted and an estimate on when the output
 	/// device should play the last samples.
-	pub fn play(&mut self, signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>) {
+	pub fn play(&mut self, signal: InterleavedAudioBuffer<Vec<f32>>) {
 		self.set_signal(signal);
 		self.wait();
 	}
 
 	#[must_use]
-	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
+	pub fn sampling_ctx(&self) -> SamplingCtx {
+		self.base_stream.sampling_ctx()
 	}
 
 	#[must_use]
-	pub fn n_of_channels(&self) -> usize {
-		N_CH
+	pub fn sample_rate(&self) -> SampleRate {
+		self.base_stream.sample_rate()
+	}
+
+	#[must_use]
+	pub fn n_ch(&self) -> usize {
+		self.base_stream.n_ch()
 	}
 
 	#[must_use]
@@ -151,8 +134,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> AudioPlayer<SAMPLE_RATE, N_CH>
 	}
 }
 
-struct PlayerState<const SAMPLE_RATE: usize, const N_CH: usize> {
-	signal: InterleavedAudioBuffer<SAMPLE_RATE, N_CH, Vec<f32>>,
+struct PlayerState {
+	signal: InterleavedAudioBuffer<Vec<f32>>,
 	end_of_signal: bool,
-	frame_idx: NOfFrames<SAMPLE_RATE, N_CH>,
+	frame_idx: NOfFrames,
 }

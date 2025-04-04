@@ -5,7 +5,7 @@ use std::{
 
 use cpal::{
 	traits::{DeviceTrait, StreamTrait},
-	Device, Stream, SupportedStreamConfig,
+	Stream,
 };
 use math_utils::moving_avg::MovingAverage;
 use mutex_ext::LockExt;
@@ -13,81 +13,34 @@ use resource_daemon::ResourceDaemon;
 
 use crate::{
 	buffers::InterleavedAudioBuffer, device_provider, input::OnErrorCallback,
-	AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState,
+	AudioStreamBuilderError, AudioStreamError, AudioStreamSamplingState, SampleRate, SamplingCtx,
 };
 
-pub type DataProducer<const SAMPLE_RATE: usize, const N_CH: usize> =
-	dyn FnMut(InterleavedAudioBuffer<SAMPLE_RATE, N_CH, &mut [f32]>) + Send + 'static;
+pub type DataProducer = dyn FnMut(InterleavedAudioBuffer<&mut [f32]>) + Send + 'static;
 
-pub struct OutputStreamBuilder<const SAMPLE_RATE: usize, const N_CH: usize> {
-	device_name: Option<String>,
-	data_producer: Box<DataProducer<SAMPLE_RATE, N_CH>>,
-	on_error: Option<Box<OnErrorCallback>>,
+struct StreamState {
+	output_delay_moving_avg: MovingAverage<Duration>,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize> std::fmt::Debug
-	for OutputStreamBuilder<SAMPLE_RATE, N_CH>
-{
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct(&format!("OutputStreamBuilder<{SAMPLE_RATE}, {N_CH}>"))
-			.field("device_name", &self.device_name)
-			.field("data_producer", &"<omitted>")
-			.field("on_error", &"<omitted>")
-			.finish()
-	}
+pub struct OutputStream {
+	sampling_ctx: SamplingCtx,
+	shared: Arc<Mutex<StreamState>>,
+	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
 }
 
-impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStreamBuilder<SAMPLE_RATE, N_CH> {
-	#[must_use]
-	pub const fn new(
-		device_name: Option<String>,
-		data_producer: Box<DataProducer<SAMPLE_RATE, N_CH>>,
-		on_error: Option<Box<OnErrorCallback>>,
-	) -> Self {
-		Self {
-			device_name,
-			data_producer,
-			on_error,
-		}
-	}
-
+impl OutputStream {
 	/// Build and start recording the input stream
 	///
 	/// # Errors
 	/// [`AudioStreamBuilderError`]
-	pub fn build(self) -> Result<OutputStream<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
-		let (device, config) = device_provider(
-			self.device_name.as_deref(),
-			crate::IOMode::Output,
-			N_CH,
-			SAMPLE_RATE,
-		)?;
-
-		Ok(OutputStream::new(
-			device,
-			config,
-			self.data_producer,
-			self.on_error,
-		))
-	}
-}
-
-struct StreamState<const SAMPLE_RATE: usize, const N_CH: usize> {
-	output_delay_moving_avg: MovingAverage<Duration>,
-}
-
-pub struct OutputStream<const SAMPLE_RATE: usize, const N_CH: usize> {
-	shared: Arc<Mutex<StreamState<SAMPLE_RATE, N_CH>>>,
-	stream_daemon: ResourceDaemon<Stream, AudioStreamError>,
-}
-
-impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStream<SAMPLE_RATE, N_CH> {
-	fn new(
-		device: Device,
-		config: SupportedStreamConfig,
-		mut data_producer: Box<DataProducer<SAMPLE_RATE, N_CH>>,
+	pub fn new(
+		sampling_ctx: SamplingCtx,
+		device_name: Option<&str>,
+		mut data_producer: Box<DataProducer>,
 		mut on_error: Option<Box<OnErrorCallback>>,
-	) -> Self {
+	) -> Result<Self, AudioStreamBuilderError> {
+		let (device, config) = device_provider(sampling_ctx, device_name, crate::IOMode::Output)?;
+
 		let shared = Arc::new(Mutex::new({
 			StreamState {
 				output_delay_moving_avg: MovingAverage::new(10),
@@ -105,7 +58,7 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStream<SAMPLE_RATE, N_CH
 							let shared = shared.clone();
 
 							move |output: &mut [f32], info| {
-								let wrapped = InterleavedAudioBuffer::new(output);
+								let wrapped = InterleavedAudioBuffer::new(sampling_ctx, output);
 								let output_buffer_frames = wrapped.n_of_frames();
 
 								data_producer(wrapped);
@@ -118,8 +71,8 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStream<SAMPLE_RATE, N_CH
 											info.timestamp()
 												.playback
 												.duration_since(&info.timestamp().callback)
-												.unwrap_or(Duration::ZERO) + output_buffer_frames
-												.to_duration(),
+												.unwrap_or(Duration::ZERO) + sampling_ctx
+												.to_duration(output_buffer_frames),
 										);
 									},
 								);
@@ -143,10 +96,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStream<SAMPLE_RATE, N_CH
 			}
 		});
 
-		Self {
+		Ok(Self {
+			sampling_ctx,
 			shared,
 			stream_daemon,
-		}
+		})
 	}
 
 	#[must_use]
@@ -161,13 +115,18 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OutputStream<SAMPLE_RATE, N_CH
 	}
 
 	#[must_use]
-	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
+	pub fn sampling_ctx(&self) -> SamplingCtx {
+		self.sampling_ctx
 	}
 
 	#[must_use]
-	pub fn n_of_channels(&self) -> usize {
-		N_CH
+	pub fn sample_rate(&self) -> SampleRate {
+		self.sampling_ctx.sample_rate()
+	}
+
+	#[must_use]
+	pub fn n_ch(&self) -> usize {
+		self.sampling_ctx.n_ch()
 	}
 
 	#[must_use]

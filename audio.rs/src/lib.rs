@@ -15,4 +15,10 @@ pub use common::*;
 mod n_of_frames;
 pub use n_of_frames::*;
 
+mod sample_rate;
+pub use sample_rate::*;
+
+mod sampling_ctx;
+pub use sampling_ctx::*;
+
 pub use rustfft::num_complex;
