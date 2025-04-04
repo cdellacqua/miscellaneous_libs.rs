@@ -72,6 +72,11 @@ impl<Buffer: Borrow<[f32]>> InterleavedAudioBuffer<Buffer> {
 	}
 
 	#[must_use]
+	pub fn sampling_ctx(&self) -> SamplingCtx {
+		self.sampling_ctx
+	}
+
+	#[must_use]
 	pub fn sample_rate(&self) -> SampleRate {
 		self.sampling_ctx.sample_rate()
 	}
