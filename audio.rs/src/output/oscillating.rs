@@ -55,22 +55,22 @@ impl Oscillator {
 						} else {
 							let harmonics = &shared.harmonics;
 
+							let sum_of_amplitudes =
+								harmonics.iter().map(Harmonic::amplitude).sum::<f32>();
+
 							let harmonics_data: Vec<_> = harmonics
 								.iter()
-								.map(|h| (h.amplitude(), h.phase(), h.frequency()))
+								.map(|h| {
+									(h.amplitude() / sum_of_amplitudes, h.phase(), h.frequency())
+								})
 								.collect();
-
-							let sum_of_amplitudes = harmonics_data
-								.iter()
-								.map(|(amplitude, ..)| amplitude)
-								.sum::<f32>();
 
 							for i in 0..chunk.n_of_frames().0 {
 								chunk.at_mut(i).samples_mut().fill(
 									harmonics_data
 										.iter()
 										.map(|(amplitude, phase, frequency)| {
-											amplitude / sum_of_amplitudes
+											amplitude
 												* f32::cos(
 													phase
 														+ TAU
@@ -163,13 +163,15 @@ pub fn harmonics_to_samples(
 	n_of_samples: usize,
 	harmonics: &[Harmonic],
 ) -> Vec<f32> {
+	let sum_of_amplitudes = harmonics.iter().map(Harmonic::amplitude).sum::<f32>();
+
 	// precompute all constants
 	let harmonics_data: Vec<_> = harmonics
 		.iter()
-		.map(|h| (h.amplitude(), h.phase(), h.frequency()))
+		.map(|h| (h.amplitude() / sum_of_amplitudes, h.phase(), h.frequency()))
 		.collect();
 
-	let mut mono = (0..n_of_samples)
+	let mono = (0..n_of_samples)
 		.map(move |i| {
 			#[allow(clippy::cast_precision_loss)]
 			harmonics_data
@@ -181,14 +183,6 @@ pub fn harmonics_to_samples(
 				.sum::<f32>()
 		})
 		.collect::<Vec<f32>>();
-
-	let abs_max = mono
-		.iter()
-		.map(|s| s.abs())
-		.max_by(f32::total_cmp)
-		.unwrap_or(1.);
-
-	mono.iter_mut().for_each(|s| *s /= abs_max);
 
 	mono
 }
