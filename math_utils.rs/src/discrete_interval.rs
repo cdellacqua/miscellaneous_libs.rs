@@ -56,40 +56,40 @@ impl<
 
 	#[must_use]
 	#[allow(clippy::cast_precision_loss)]
-	pub fn bin_to_range_start(&self, bin_idx: usize) -> T {
+	pub fn bin_to_range_start(&self, bin: usize) -> T {
 		debug_assert!(
-			bin_idx < self.n_of_bins,
+			bin < self.n_of_bins,
 			"index {} is out of range. n_of_bins is {}",
-			bin_idx,
+			bin,
 			self.n_of_bins
 		);
-		self.interval.0 + self.bin_width().mul_usize(bin_idx)
+		self.interval.0 + self.bin_width().mul_usize(bin)
 	}
 
 	#[must_use]
 	#[allow(clippy::cast_precision_loss)]
-	pub fn bin_to_range_end(&self, bin_idx: usize) -> T {
+	pub fn bin_to_range_end(&self, bin: usize) -> T {
 		debug_assert!(
-			bin_idx < self.n_of_bins,
+			bin < self.n_of_bins,
 			"index {} is out of range. n_of_bins is {}",
-			bin_idx,
+			bin,
 			self.n_of_bins
 		);
-		self.interval.0 + self.bin_width().mul_usize(bin_idx + 1)
+		self.interval.0 + self.bin_width().mul_usize(bin + 1)
 	}
 
 	#[must_use]
-	pub fn bin_range(&self, bin_idx: usize) -> (T, T) {
+	pub fn bin_range(&self, bin: usize) -> (T, T) {
 		let gap = self.bin_width();
-		let value = self.bin_to_range_start(bin_idx);
+		let value = self.bin_to_range_start(bin);
 		(value, value + gap)
 	}
 
 	#[must_use]
-	pub fn bin_midpoint(&self, bin_idx: usize) -> T {
+	pub fn bin_midpoint(&self, bin: usize) -> T {
 		let gap = self.bin_width();
 		let half_gap = gap.div_usize(2);
-		let value = self.bin_to_range_start(bin_idx);
+		let value = self.bin_to_range_start(bin);
 		value + half_gap
 	}
 

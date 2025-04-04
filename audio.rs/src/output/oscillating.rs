@@ -48,7 +48,12 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> OscillatorBuilder<SAMPLE_RATE,
 	pub fn build(&self) -> Result<Oscillator<SAMPLE_RATE, N_CH>, AudioStreamBuilderError> {
 		let shared = Arc::new(Mutex::new(OscillatorState {
 			frame_idx: NOfFrames::new(0),
-			signal: harmonics_to_samples(SAMPLE_RATE, &self.harmonics).multiply(),
+			signal: InterleavedAudioBuffer::new(harmonics_to_samples(
+				SAMPLE_RATE,
+				SAMPLE_RATE,
+				&self.harmonics,
+			))
+			.multiply(),
 			mute: false,
 			harmonics: self.harmonics.clone(),
 		}));
@@ -123,7 +128,12 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 	/// - if the mutex guarding the internal state is poisoned.
 	pub fn set_harmonics(&mut self, harmonics: Vec<Harmonic>) {
 		self.shared.with_lock_mut(|shared| {
-			shared.signal = harmonics_to_samples::<SAMPLE_RATE>(SAMPLE_RATE, &harmonics).multiply();
+			shared.signal = InterleavedAudioBuffer::new(harmonics_to_samples(
+				SAMPLE_RATE,
+				SAMPLE_RATE,
+				&harmonics,
+			))
+			.multiply();
 			shared.harmonics = harmonics;
 			shared.frame_idx = 0.into();
 		});
@@ -170,10 +180,11 @@ impl<const SAMPLE_RATE: usize, const N_CH: usize> Oscillator<SAMPLE_RATE, N_CH> 
 /// Generate a series of samples computed using a cosine wave with the
 /// specified frequency, phase and amplitude.
 #[must_use]
-pub fn harmonics_to_samples<const SAMPLE_RATE: usize>(
+pub fn harmonics_to_samples(
+	sample_rate: usize,
 	n_of_samples: usize,
 	harmonics: &[Harmonic],
-) -> InterleavedAudioBuffer<SAMPLE_RATE, 1, Vec<f32>> {
+) -> Vec<f32> {
 	// precompute all constants
 	let harmonics_data: Vec<_> = harmonics
 		.iter()
@@ -186,7 +197,7 @@ pub fn harmonics_to_samples<const SAMPLE_RATE: usize>(
 			harmonics_data
 				.iter()
 				.map(|(amplitude, phase, frequency)| {
-					amplitude * f32::cos(phase + TAU * frequency * (i as f32 / SAMPLE_RATE as f32))
+					amplitude * f32::cos(phase + TAU * frequency * (i as f32 / sample_rate as f32))
 				})
 				.sum::<f32>()
 		})
@@ -200,7 +211,7 @@ pub fn harmonics_to_samples<const SAMPLE_RATE: usize>(
 
 	mono.iter_mut().for_each(|s| *s /= abs_max);
 
-	InterleavedAudioBuffer::new(mono)
+	mono
 }
 
 #[cfg(test)]
@@ -210,7 +221,7 @@ mod tests {
 	use math_utils::one_dimensional_mapping::MapRange;
 	use rustfft::num_complex::Complex32;
 
-	use crate::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow, DiscreteFrequency};
+	use crate::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow, DftCtx};
 
 	use super::*;
 
@@ -245,29 +256,23 @@ mod tests {
 
 	#[test]
 	fn test_frequencies_to_samples() {
-		let samples = harmonics_to_samples::<44100>(100, &[Harmonic::new(Complex32::ONE, 440.)]);
-		assert!((samples.as_mono()[0] - 1.0).abs() < f32::EPSILON);
-		assert!((samples.as_mono()[1] - 1.0).abs() > f32::EPSILON);
+		let samples = harmonics_to_samples(44100, 100, &[Harmonic::new(Complex32::ONE, 440.)]);
+		assert!((samples[0] - 1.0).abs() < f32::EPSILON);
+		assert!((samples[1] - 1.0).abs() > f32::EPSILON);
 	}
 
 	#[test]
 	#[ignore = "manually run this test to check the phase of the output with a spectrum analyzer"]
 	fn test_phase() {
 		let mut oscillator = OscillatorBuilder::<8000, 1>::new(
-			vec![Harmonic::new(
-				Complex32::from_polar(1., 0.),
-				DiscreteFrequency::from_frequency(8000, 1024, 2000.0).frequency(),
-			)],
+			vec![Harmonic::new(Complex32::from_polar(1., 0.), 2000.0)],
 			false,
 			None,
 		)
 		.build()
 		.unwrap();
 		sleep(Duration::from_secs(50));
-		oscillator.set_harmonics(vec![Harmonic::new(
-			Complex32::from_polar(1., PI),
-			DiscreteFrequency::from_frequency(8000, 1024, 2000.0).frequency(),
-		)]);
+		oscillator.set_harmonics(vec![Harmonic::new(Complex32::from_polar(1., PI), 2000.0)]);
 		sleep(Duration::from_secs(5));
 	}
 
@@ -276,28 +281,30 @@ mod tests {
 		const N: usize = 10;
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES_PER_WINDOW: usize = 64;
+		let dft_ctx = DftCtx::new(SAMPLE_RATE, SAMPLES_PER_WINDOW);
 
-		let bin = DiscreteFrequency::from_frequency(SAMPLE_RATE, SAMPLES_PER_WINDOW, 3000.0);
+		let bin = dft_ctx.frequency_to_bin(3000.0);
 		for phase_idx in 0..100 {
 			let ref_phase = (phase_idx as f32).map((0., 99.), (-PI, PI - 0.001));
-			let impulse = harmonics_to_samples::<SAMPLE_RATE>(
+			let impulse = harmonics_to_samples(
+				SAMPLE_RATE,
 				SAMPLES_PER_WINDOW,
 				&[Harmonic::new(
 					Complex32::from_polar(1., ref_phase),
-					bin.frequency(),
+					dft_ctx.bin_to_frequency(bin),
 				)],
 			);
 
-			let mut signal = vec![0.; impulse.n_of_frames().n_of_samples() * N];
+			let mut signal = vec![0.; impulse.len() * N];
 			for i in 0..N {
-				signal[i * impulse.n_of_frames().n_of_samples()
-					..(i + 1) * impulse.n_of_frames().n_of_samples()]
-					.copy_from_slice(impulse.as_mono());
+				signal[i * impulse.len()
+					..(i + 1) * impulse.len()]
+					.copy_from_slice(&impulse);
 			}
 			let mut goertzel =
-				GoertzelAnalyzer::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, vec![bin], &HannWindow);
+				GoertzelAnalyzer::new(dft_ctx, vec![bin], &HannWindow);
 			let h = goertzel
-				.analyze(&signal[0..impulse.n_of_frames().n_of_samples()])
+				.analyze(&signal[0..impulse.len()])
 				.first()
 				.copied()
 				.unwrap();
@@ -312,8 +319,8 @@ mod tests {
 			for i in 1..N {
 				let h = goertzel
 					.analyze(
-						&signal[i * impulse.n_of_frames().n_of_samples()
-							..(i + 1) * impulse.n_of_frames().n_of_samples()],
+						&signal[i * impulse.len()
+							..(i + 1) * impulse.len()],
 					)
 					.first()
 					.copied()

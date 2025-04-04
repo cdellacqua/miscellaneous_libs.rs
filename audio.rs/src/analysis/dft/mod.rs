@@ -15,28 +15,25 @@ mod tests {
 		analysis::{
 			dft::{GoertzelAnalyzer, StftAnalyzer},
 			windowing_fns::HannWindow,
-			DiscreteFrequency, Harmonic,
+			DftCtx, Harmonic,
 		},
 		output::harmonics_to_samples,
 	};
 
 	#[test]
 	fn cross_check_goertzel_and_stft() {
-		const SAMPLE_RATE: usize = 44100;
-		const SAMPLES_PER_WINDOW: usize = 44100;
+		let dft_ctx = DftCtx::new(44100, 44100);
 
 		let frequency = 440.;
-		let frequency_bin =
-			DiscreteFrequency::from_frequency(SAMPLE_RATE, SAMPLES_PER_WINDOW, frequency);
+		let frequency_bin = dft_ctx.frequency_to_bin(frequency);
 
-		let signal = harmonics_to_samples::<SAMPLE_RATE>(
-			SAMPLES_PER_WINDOW,
+		let signal = harmonics_to_samples(
+			dft_ctx.sample_rate(),
+			dft_ctx.samples_per_window(),
 			&[Harmonic::new(Complex32::ONE, frequency)],
 		);
-		let signal = signal.as_mono();
 		let mut goertzel = GoertzelAnalyzer::new(
-			SAMPLE_RATE,
-			SAMPLES_PER_WINDOW,
+			dft_ctx,
 			vec![
 				frequency_bin - 20,
 				frequency_bin - 15,
@@ -50,26 +47,26 @@ mod tests {
 			],
 			&HannWindow::new(),
 		);
-		let mut stft = StftAnalyzer::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, &HannWindow::new());
+		let mut stft = StftAnalyzer::new(dft_ctx, &HannWindow::new());
 
 		let stft_result = stft
-			.analyze(signal)
+			.analyze(&signal)
 			.iter()
 			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap();
 		let goertzel_result = goertzel
-			.analyze(signal)
+			.analyze(&signal)
 			.iter()
 			.max_by(|a, b| a.power().total_cmp(&b.power()))
 			.unwrap();
 
 		assert_eq!(
-			stft_result.bin_idx(),
-			goertzel_result.bin_idx(),
+			stft_result.bin(),
+			goertzel_result.bin(),
 			"goertzel and stft should yield the same frequency result"
 		);
 		assert!(
-			(stft_result.amplitude() - goertzel_result.amplitude()).abs() < 0.01,
+			(stft_result.power() - goertzel_result.power()).abs() < 0.01,
 			"goertzel and stft should yield a similar amplitude result"
 		);
 		assert!(

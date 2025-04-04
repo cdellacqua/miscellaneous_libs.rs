@@ -5,20 +5,25 @@ pub use windowing_fn::*;
 
 pub mod windowing_fns;
 
-mod discrete_harmonic;
-pub use discrete_harmonic::*;
-
 mod harmonic;
 pub use harmonic::*;
 
-mod discrete_frequency;
-pub use discrete_frequency::*;
+mod discrete_harmonic;
+pub use discrete_harmonic::*;
 
-impl From<DiscreteHarmonic> for Harmonic {
-	fn from(value: DiscreteHarmonic) -> Self {
-		Self::new(
-			value.phasor(),
-			value.frequency(),
-		)
+mod dft_ctx;
+pub use dft_ctx::*;
+
+impl DiscreteHarmonic {
+	#[must_use]
+	pub fn to_harmonic(&self, dft_ctx: DftCtx) -> Harmonic {
+		Harmonic::new(self.phasor(), dft_ctx.bin_to_frequency(self.bin()))
+	}
+}
+
+impl Harmonic {
+	#[must_use]
+	pub fn to_discrete_harmonic(&self, dft_ctx: DftCtx) -> DiscreteHarmonic {
+		DiscreteHarmonic::new(self.phasor(), dft_ctx.frequency_to_bin(self.frequency()))
 	}
 }

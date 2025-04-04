@@ -30,6 +30,13 @@ impl Harmonic {
 		self.frequency
 	}
 
+	/// Get the underlying complex number representing the
+	/// phase and amplitude of this harmonic.
+	#[must_use]
+	pub fn phasor(&self) -> Complex32 {
+		self.phasor
+	}
+
 	/// The phase of the harmonic represents the phase offset of a cosine wave (i.e. the real component of a DFT point).
 	#[must_use]
 	pub fn phase(&self) -> f32 {
@@ -51,12 +58,5 @@ impl Harmonic {
 		//
 		// where P is power, V is voltage and R is resistance.
 		self.phasor.norm_sqr()
-	}
-
-	/// Get the underlying complex number representing the
-	/// phase and amplitude of this harmonic.
-	#[must_use]
-	pub fn phasor(&self) -> Complex32 {
-		self.phasor
 	}
 }
