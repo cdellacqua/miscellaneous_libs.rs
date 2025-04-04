@@ -68,8 +68,8 @@ impl<'a, Buffer: BorrowMut<[f32]>> Iterator for InterleavedAudioBufferIterMut<'a
 
 			self.i += 1;
 
-			// SAFETY: the iterator owns the underlying buffer and it's giving away
-			// mutable references to disjoint regions of memory
+			// SAFETY: the iterator has an exclusive reference to the underlying buffer and
+			// it's giving out mutable references to disjoint regions of memory.
 			Some(unsafe {
 				AudioFrame::new(slice::from_raw_parts_mut(
 					frame,
