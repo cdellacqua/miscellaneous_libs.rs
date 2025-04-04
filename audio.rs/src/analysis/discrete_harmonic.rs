@@ -2,56 +2,72 @@ use std::fmt::Debug;
 
 use rustfft::num_complex::Complex32;
 
-use super::FrequencyBin;
+use super::DiscreteFrequency;
 
 #[derive(Clone, Copy, PartialEq, Default)]
-pub struct DiscreteHarmonic<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
-	phasor: Complex32,
-	frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>,
+pub struct DiscreteHarmonic {
+	sample_rate: usize,
+	samples_per_window: usize,
+	pub(crate) phasor: Complex32,
+	frequency_bin: DiscreteFrequency,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Debug
-	for DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
+impl Debug for DiscreteHarmonic {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct(&format!(
-			"DiscreteHarmonic<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
-		))
-		.field("phasor", &self.phasor)
-		.field("frequency_bin", &self.frequency_bin)
-		.field("power()", &self.power())
-		.field("phase()", &self.phase())
-		.finish()
+		f.debug_struct("DiscreteHarmonic")
+			.field("sample_rate", &self.sample_rate)
+			.field("samples_per_window", &self.samples_per_window)
+			.field("phasor", &self.phasor)
+			.field("frequency_bin", &self.frequency_bin)
+			.field("power()", &self.power())
+			.field("phase()", &self.phase())
+			.finish()
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
-	DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
+impl DiscreteHarmonic {
 	#[must_use]
 	pub fn new(
+		sample_rate: usize,
+		samples_per_window: usize,
 		phasor: Complex32,
-		frequency_bin: FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>,
+		frequency_bin: DiscreteFrequency,
 	) -> Self {
 		Self {
+			sample_rate,
+			samples_per_window,
 			phasor,
 			frequency_bin,
 		}
 	}
 
 	#[must_use]
-	pub fn from_bin_idx(phasor: Complex32, bin_idx: usize) -> Self {
+	pub fn from_bin_idx(
+		sample_rate: usize,
+		samples_per_window: usize,
+		phasor: Complex32,
+		bin_idx: usize,
+	) -> Self {
 		Self {
+			sample_rate,
+			samples_per_window,
 			phasor,
-			frequency_bin: FrequencyBin::new(bin_idx),
+			frequency_bin: DiscreteFrequency::new(sample_rate, samples_per_window, bin_idx),
 		}
 	}
 
 	#[must_use]
-	pub fn from_frequency(phasor: Complex32, frequency: f32) -> Self {
+	pub fn from_frequency(
+		sample_rate: usize,
+		samples_per_window: usize,
+		phasor: Complex32,
+		frequency: f32,
+	) -> Self {
 		Self {
+			sample_rate,
+			samples_per_window,
 			phasor,
-			frequency_bin: FrequencyBin::from_frequency(frequency),
+			frequency_bin: DiscreteFrequency::from_frequency(sample_rate, samples_per_window, frequency),
 		}
 	}
 
@@ -66,8 +82,18 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	}
 
 	#[must_use]
-	pub const fn frequency_bin(&self) -> FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW> {
+	pub const fn frequency_bin(&self) -> DiscreteFrequency {
 		self.frequency_bin
+	}
+
+	#[must_use]
+	pub const fn sample_rate(&self) -> usize {
+		self.sample_rate
+	}
+
+	#[must_use]
+	pub const fn samples_per_window(&self) -> usize {
+		self.samples_per_window
 	}
 
 	/// The phase of the harmonic represents the phase offset of a cosine wave (i.e. the real component of a DFT point).

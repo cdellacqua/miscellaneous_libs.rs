@@ -1,47 +1,54 @@
 use std::f32::consts::TAU;
 
-use rustfft::num_complex::Complex32;
+use rustfft::num_complex::{Complex, Complex32};
 
-use crate::analysis::{DiscreteHarmonic, FrequencyBin, WindowingFn};
+use crate::analysis::{DiscreteHarmonic, DiscreteFrequency, WindowingFn};
 
 #[derive(Debug)]
-pub struct GoertzelAnalyzer<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
+pub struct GoertzelAnalyzer {
+	sample_rate: usize,
+	samples_per_window: usize,
 	windowing_values: Vec<f32>,
-	cur_transform: Vec<DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
+	cur_transform: Vec<DiscreteHarmonic>,
 	cur_signal: Vec<f32>,
-	frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
 	coefficients: Vec<(f32, Complex32)>,
 	normalization_factor: f32,
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
-	GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
+impl GoertzelAnalyzer {
 	#[allow(clippy::cast_precision_loss)]
 	pub fn new(
-		mut frequency_bins: Vec<FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>>,
+		sample_rate: usize,
+		samples_per_window: usize,
+		mut frequency_bins: Vec<DiscreteFrequency>,
 		windowing_fn: &impl WindowingFn,
 	) -> Self {
 		frequency_bins.sort_unstable();
 		Self {
+			sample_rate,
+			samples_per_window,
 			// Pre-computing coefficients
 			coefficients: frequency_bins
 				.iter()
 				.map(|&bin| {
-					let ω = TAU * bin.bin_idx() as f32 / SAMPLES_PER_WINDOW as f32;
+					let ω = TAU * bin.bin_idx() as f32 / samples_per_window as f32;
 					(2.0 * ω.cos(), Complex32::new(ω.cos(), ω.sin()))
 				})
 				.collect(),
-			cur_transform: vec![DiscreteHarmonic::default(); frequency_bins.len()],
-			cur_signal: vec![0.; SAMPLES_PER_WINDOW],
-			frequency_bins,
-			windowing_values: (0..SAMPLES_PER_WINDOW)
-				.map(|i| windowing_fn.ratio_at(i, SAMPLES_PER_WINDOW))
+			cur_transform: frequency_bins
+				.into_iter()
+				.map(|bin| {
+					DiscreteHarmonic::new(sample_rate, samples_per_window, Complex::ZERO, bin)
+				})
+				.collect(),
+			cur_signal: vec![0.; samples_per_window],
+			windowing_values: (0..samples_per_window)
+				.map(|i| windowing_fn.ratio_at(i, samples_per_window))
 				.collect(),
 			// Normalization also applies here.
 			// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
 			#[allow(clippy::cast_precision_loss)]
-			normalization_factor: 1.0 / (SAMPLES_PER_WINDOW as f32).sqrt(),
+			normalization_factor: 1.0 / (samples_per_window as f32).sqrt(),
 		}
 	}
 
@@ -52,14 +59,11 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 	/// # Panics
 	/// - if the passed `signal` is not compatible with the configured `samples_per_window`.
 	#[must_use]
-	pub fn analyze(
-		&mut self,
-		signal: &[f32],
-	) -> &Vec<DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> {
+	pub fn analyze(&mut self, signal: &[f32]) -> &Vec<DiscreteHarmonic> {
 		let samples = signal.len();
 
 		assert_eq!(
-			samples, SAMPLES_PER_WINDOW,
+			samples, self.samples_per_window,
 			"signal with incompatible length received"
 		);
 
@@ -72,12 +76,7 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 			*dst = sample * windowing_value;
 		}
 
-		for ((&bin, coeff), bin_point) in self
-			.frequency_bins
-			.iter()
-			.zip(self.coefficients.iter())
-			.zip(self.cur_transform.iter_mut())
-		{
+		for (coeff, bin_point) in self.coefficients.iter().zip(self.cur_transform.iter_mut()) {
 			let mut z1 = 0.0;
 			let mut z2 = 0.0;
 
@@ -87,10 +86,8 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 				z1 = z0;
 			}
 
-			*bin_point = DiscreteHarmonic::new(
-				Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * self.normalization_factor,
-				bin,
-			);
+			bin_point.phasor =
+				Complex32::new(z1 * coeff.1.re - z2, z1 * coeff.1.im) * self.normalization_factor;
 		}
 
 		&self.cur_transform
@@ -98,12 +95,12 @@ impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
 
 	#[must_use]
 	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
+		self.sample_rate
 	}
 
 	#[must_use]
 	pub fn samples_per_window(&self) -> usize {
-		SAMPLES_PER_WINDOW
+		self.samples_per_window
 	}
 }
 
@@ -123,9 +120,11 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES_PER_WINDOW: usize = 4410;
 
-		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(50);
+		let bin = DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, 50);
 
-		let mut stft_analyzer = GoertzelAnalyzer::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(
+		let mut stft_analyzer = GoertzelAnalyzer::new(
+			SAMPLE_RATE,
+			SAMPLES_PER_WINDOW,
 			vec![bin - 2, bin - 1, bin, bin + 1, bin + 2],
 			&HannWindow,
 		);
@@ -157,9 +156,11 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES_PER_WINDOW: usize = 4410;
 
-		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(50);
+		let bin = DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, 50);
 
-		let mut stft_analyzer = GoertzelAnalyzer::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(
+		let mut stft_analyzer = GoertzelAnalyzer::new(
+			SAMPLE_RATE,
+			SAMPLES_PER_WINDOW,
 			vec![bin - 2, bin - 1, bin, bin + 1, bin + 2],
 			&HannWindow,
 		);
@@ -185,9 +186,11 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES_PER_WINDOW: usize = 100;
 
-		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::from_frequency(441.);
+		let bin = DiscreteFrequency::from_frequency(SAMPLE_RATE, SAMPLES_PER_WINDOW, 441.);
 		assert_eq!(bin.bin_idx(), 1);
-		let mut stft_analyzer = GoertzelAnalyzer::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(
+		let mut stft_analyzer = GoertzelAnalyzer::new(
+			SAMPLE_RATE,
+			SAMPLES_PER_WINDOW,
 			vec![bin, bin + 1, bin + 2],
 			&HannWindow,
 		);

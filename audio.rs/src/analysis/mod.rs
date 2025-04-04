@@ -11,21 +11,14 @@ pub use discrete_harmonic::*;
 mod harmonic;
 pub use harmonic::*;
 
-mod frequency_bin;
-pub use frequency_bin::*;
+mod discrete_frequency;
+pub use discrete_frequency::*;
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> From<Harmonic>
-	for DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	fn from(value: Harmonic) -> Self {
-		Self::from_frequency(value.phasor(), value.frequency())
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
-	From<DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>> for Harmonic
-{
-	fn from(value: DiscreteHarmonic<SAMPLE_RATE, SAMPLES_PER_WINDOW>) -> Self {
-		Self::new(value.phasor(), value.frequency())
+impl From<DiscreteHarmonic> for Harmonic {
+	fn from(value: DiscreteHarmonic) -> Self {
+		Self::new(
+			value.phasor(),
+			value.frequency(),
+		)
 	}
 }

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use audio::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow};
+use audio::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow, DiscreteFrequency};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn bench_goertzel(c: &mut Criterion) {
@@ -8,8 +8,15 @@ fn bench_goertzel(c: &mut Criterion) {
 	let mut rng = rand::thread_rng();
 	let sample: Vec<f32> = (0..64).map(|_| rng.gen_range(-1.0..=1.0)).collect();
 
-	let mut analyzer = GoertzelAnalyzer::<44_100, 64>::new(
-		vec![2.into(), 3.into(), 4.into(), 5.into()],
+	let mut analyzer = GoertzelAnalyzer::new(
+		44_100,
+		64,
+		vec![
+			DiscreteFrequency::new(44_100, 64, 2),
+			DiscreteFrequency::new(44_100, 64, 3),
+			DiscreteFrequency::new(44_100, 64, 4),
+			DiscreteFrequency::new(44_100, 64, 5),
+		],
 		&HannWindow::new(),
 	);
 	c.bench_function("Goertzel analyzer", |b| {

@@ -15,7 +15,7 @@ mod tests {
 		analysis::{
 			dft::{GoertzelAnalyzer, StftAnalyzer},
 			windowing_fns::HannWindow,
-			FrequencyBin, Harmonic,
+			DiscreteFrequency, Harmonic,
 		},
 		output::harmonics_to_samples,
 	};
@@ -27,14 +27,16 @@ mod tests {
 
 		let frequency = 440.;
 		let frequency_bin =
-			FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::from_frequency(frequency);
+			DiscreteFrequency::from_frequency(SAMPLE_RATE, SAMPLES_PER_WINDOW, frequency);
 
 		let signal = harmonics_to_samples::<SAMPLE_RATE>(
 			SAMPLES_PER_WINDOW,
 			&[Harmonic::new(Complex32::ONE, frequency)],
 		);
 		let signal = signal.as_mono();
-		let mut goertzel: GoertzelAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW> = GoertzelAnalyzer::new(
+		let mut goertzel = GoertzelAnalyzer::new(
+			SAMPLE_RATE,
+			SAMPLES_PER_WINDOW,
 			vec![
 				frequency_bin - 20,
 				frequency_bin - 15,
@@ -48,8 +50,7 @@ mod tests {
 			],
 			&HannWindow::new(),
 		);
-		let mut stft: StftAnalyzer<SAMPLE_RATE, SAMPLES_PER_WINDOW> =
-			StftAnalyzer::new(&HannWindow::new());
+		let mut stft = StftAnalyzer::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, &HannWindow::new());
 
 		let stft_result = stft
 			.analyze(signal)

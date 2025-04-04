@@ -56,9 +56,9 @@ pub fn frequency_interval(
 }
 
 #[must_use]
-pub fn all_frequency_bins(sample_rate: usize, samples_per_window: usize) -> Vec<DynFrequencyBin> {
+pub fn all_frequency_bins(sample_rate: usize, samples_per_window: usize) -> Vec<DiscreteFrequency> {
 	(0..n_of_frequency_bins(samples_per_window))
-		.map(|bin_idx| DynFrequencyBin::new(sample_rate, samples_per_window, bin_idx))
+		.map(|bin_idx| DiscreteFrequency::new(sample_rate, samples_per_window, bin_idx))
 		.collect()
 }
 
@@ -72,55 +72,27 @@ pub const fn n_of_frequency_bins(samples_per_window: usize) -> usize {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, From, Default)]
-pub struct FrequencyBin<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> {
-	bin_idx: usize,
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Debug
-	for FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct(&format!(
-			"FrequencyBin<{SAMPLE_RATE}, {SAMPLES_PER_WINDOW}>"
-		))
-		.field("bin_idx", &self.bin_idx)
-		.field("frequency()", &self.frequency())
-		.field("frequency_interval()", &self.frequency_interval())
-		.finish()
-	}
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct DynFrequencyBin {
+pub struct DiscreteFrequency {
 	sample_rate: usize,
 	samples_per_window: usize,
 	bin_idx: usize,
 }
 
-impl Debug for DynFrequencyBin {
+impl Debug for DiscreteFrequency {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("DynFrequencyBin")
+		f.debug_struct("DiscreteFrequency")
 			.field("sample_rate", &self.sample_rate)
 			.field("samples_per_window", &self.samples_per_window)
 			.field("bin_idx", &self.bin_idx)
+			.field("frequency()", &self.frequency())
 			.field("frequency_interval()", &self.frequency_interval())
 			.finish()
 	}
 }
 
-impl DynFrequencyBin {
+impl DiscreteFrequency {
 	#[must_use]
 	pub const fn new(sample_rate: usize, samples_per_window: usize, bin_idx: usize) -> Self {
-		Self {
-			sample_rate,
-			samples_per_window,
-			bin_idx,
-		}
-	}
-
-	#[must_use]
-	pub fn from_frequency(sample_rate: usize, samples_per_window: usize, frequency: f32) -> Self {
-		let bin_idx = frequency_to_bin_idx(sample_rate, samples_per_window, frequency);
 		Self {
 			sample_rate,
 			samples_per_window,
@@ -139,8 +111,17 @@ impl DynFrequencyBin {
 	}
 
 	#[must_use]
-	pub fn bin_idx(&self) -> usize {
+	pub const fn bin_idx(&self) -> usize {
 		self.bin_idx
+	}
+
+	#[must_use]
+	pub fn from_frequency(sample_rate: usize, samples_per_window: usize, frequency: f32) -> Self {
+		Self::new(
+			sample_rate,
+			samples_per_window,
+			frequency_to_bin_idx(sample_rate, samples_per_window, frequency),
+		)
 	}
 
 	#[must_use]
@@ -154,86 +135,7 @@ impl DynFrequencyBin {
 	}
 }
 
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize>
-	FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	#[must_use]
-	pub const fn new(bin_idx: usize) -> Self {
-		Self { bin_idx }
-	}
-
-	#[must_use]
-	pub fn frequency(&self) -> f32 {
-		bin_idx_to_frequency(SAMPLE_RATE, SAMPLES_PER_WINDOW, self.bin_idx)
-	}
-
-	#[must_use]
-	pub fn frequency_interval(&self) -> (f32, f32) {
-		frequency_interval(SAMPLE_RATE, SAMPLES_PER_WINDOW, self.bin_idx)
-	}
-
-	#[must_use]
-	pub const fn bin_idx(&self) -> usize {
-		self.bin_idx
-	}
-
-	#[must_use]
-	pub fn from_frequency(frequency: f32) -> Self {
-		Self::new(frequency_to_bin_idx(
-			SAMPLE_RATE,
-			SAMPLES_PER_WINDOW,
-			frequency,
-		))
-	}
-
-	#[must_use]
-	pub fn sample_rate(&self) -> usize {
-		SAMPLE_RATE
-	}
-
-	#[must_use]
-	pub fn samples_per_window(&self) -> usize {
-		SAMPLES_PER_WINDOW
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Add<usize>
-	for FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	type Output = Self;
-
-	fn add(self, rhs: usize) -> Self::Output {
-		Self::new(self.bin_idx + rhs)
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> AddAssign<usize>
-	for FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	fn add_assign(&mut self, rhs: usize) {
-		self.bin_idx += rhs;
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> Sub<usize>
-	for FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	type Output = Self;
-
-	fn sub(self, rhs: usize) -> Self::Output {
-		Self::new(self.bin_idx - rhs)
-	}
-}
-
-impl<const SAMPLE_RATE: usize, const SAMPLES_PER_WINDOW: usize> SubAssign<usize>
-	for FrequencyBin<SAMPLE_RATE, SAMPLES_PER_WINDOW>
-{
-	fn sub_assign(&mut self, rhs: usize) {
-		self.bin_idx -= rhs;
-	}
-}
-
-impl Add<usize> for DynFrequencyBin {
+impl Add<usize> for DiscreteFrequency {
 	type Output = Self;
 
 	fn add(self, rhs: usize) -> Self::Output {
@@ -245,13 +147,13 @@ impl Add<usize> for DynFrequencyBin {
 	}
 }
 
-impl AddAssign<usize> for DynFrequencyBin {
+impl AddAssign<usize> for DiscreteFrequency {
 	fn add_assign(&mut self, rhs: usize) {
 		self.bin_idx += rhs;
 	}
 }
 
-impl Sub<usize> for DynFrequencyBin {
+impl Sub<usize> for DiscreteFrequency {
 	type Output = Self;
 
 	fn sub(self, rhs: usize) -> Self::Output {
@@ -263,7 +165,7 @@ impl Sub<usize> for DynFrequencyBin {
 	}
 }
 
-impl SubAssign<usize> for DynFrequencyBin {
+impl SubAssign<usize> for DiscreteFrequency {
 	fn sub_assign(&mut self, rhs: usize) {
 		self.bin_idx -= rhs;
 	}
@@ -280,20 +182,20 @@ mod tests {
 		const SAMPLES_PER_WINDOW: usize = 100;
 
 		assert!(
-			(FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(0)
+			(DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, 0)
 				.frequency_interval()
 				.0 + 220.5)
 				.abs() < f32::EPSILON,
 			"{:?}",
-			FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(0).frequency_interval()
+			DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, 0).frequency_interval()
 		);
 		assert!(
-			(FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(0)
+			(DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, 0)
 				.frequency_interval()
 				.1 - 220.5)
 				.abs() < f32::EPSILON,
 			"{:?}",
-			FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(0).frequency_interval()
+			DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, 0).frequency_interval()
 		);
 	}
 
@@ -307,14 +209,16 @@ mod tests {
 			for i in 0..=samples_per_window / 2 {
 				assert_eq!(
 					i,
-					FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::from_frequency(
-						FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(i).frequency()
+					DiscreteFrequency::from_frequency(
+						SAMPLE_RATE,
+						SAMPLES_PER_WINDOW,
+						DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, i).frequency()
 					)
 					.bin_idx(),
 					"{samples_per_window:?}"
 				);
 				assert!(
-					FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(i).bin_idx()
+					DiscreteFrequency::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, i).bin_idx()
 						< samples_per_window
 				);
 			}
@@ -328,13 +232,17 @@ mod tests {
 		const SAMPLES_PER_WINDOW: usize = 44100;
 
 		assert!(
-			FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(
+			DiscreteFrequency::new(
+				SAMPLE_RATE,
+				SAMPLES_PER_WINDOW,
 				n_of_frequency_bins(SAMPLES_PER_WINDOW) - 1
 			)
 			.bin_idx() == SAMPLES_PER_WINDOW / 2
 		);
 		assert!(
-			(FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::new(
+			(DiscreteFrequency::new(
+				SAMPLE_RATE,
+				SAMPLES_PER_WINDOW,
 				n_of_frequency_bins(SAMPLES_PER_WINDOW) - 1
 			)
 			.frequency() - SAMPLE_RATE as f32 / 2.)

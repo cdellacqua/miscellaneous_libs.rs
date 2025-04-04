@@ -210,7 +210,7 @@ mod tests {
 	use math_utils::one_dimensional_mapping::MapRange;
 	use rustfft::num_complex::Complex32;
 
-	use crate::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow, FrequencyBin};
+	use crate::analysis::{dft::GoertzelAnalyzer, windowing_fns::HannWindow, DiscreteFrequency};
 
 	use super::*;
 
@@ -256,7 +256,7 @@ mod tests {
 		let mut oscillator = OscillatorBuilder::<8000, 1>::new(
 			vec![Harmonic::new(
 				Complex32::from_polar(1., 0.),
-				FrequencyBin::<8000, 1024>::from_frequency(2000.0).frequency(),
+				DiscreteFrequency::from_frequency(8000, 1024, 2000.0).frequency(),
 			)],
 			false,
 			None,
@@ -266,7 +266,7 @@ mod tests {
 		sleep(Duration::from_secs(50));
 		oscillator.set_harmonics(vec![Harmonic::new(
 			Complex32::from_polar(1., PI),
-			FrequencyBin::<8000, 1024>::from_frequency(2000.0).frequency(),
+			DiscreteFrequency::from_frequency(8000, 1024, 2000.0).frequency(),
 		)]);
 		sleep(Duration::from_secs(5));
 	}
@@ -277,7 +277,7 @@ mod tests {
 		const SAMPLE_RATE: usize = 44100;
 		const SAMPLES_PER_WINDOW: usize = 64;
 
-		let bin = FrequencyBin::<SAMPLE_RATE, SAMPLES_PER_WINDOW>::from_frequency(3000.0);
+		let bin = DiscreteFrequency::from_frequency(SAMPLE_RATE, SAMPLES_PER_WINDOW, 3000.0);
 		for phase_idx in 0..100 {
 			let ref_phase = (phase_idx as f32).map((0., 99.), (-PI, PI - 0.001));
 			let impulse = harmonics_to_samples::<SAMPLE_RATE>(
@@ -294,7 +294,8 @@ mod tests {
 					..(i + 1) * impulse.n_of_frames().n_of_samples()]
 					.copy_from_slice(impulse.as_mono());
 			}
-			let mut goertzel = GoertzelAnalyzer::new(vec![bin], &HannWindow);
+			let mut goertzel =
+				GoertzelAnalyzer::new(SAMPLE_RATE, SAMPLES_PER_WINDOW, vec![bin], &HannWindow);
 			let h = goertzel
 				.analyze(&signal[0..impulse.n_of_frames().n_of_samples()])
 				.first()
