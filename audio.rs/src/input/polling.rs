@@ -32,7 +32,7 @@ impl InputStreamPoller {
 		let shared = Arc::new(Mutex::new({
 			PollerState {
 				buffer: {
-					let mut buf = AllocRingBuffer::new(sampling_ctx.n_of_samples(n_of_frames));
+					let mut buf = AllocRingBuffer::new(sampling_ctx.frames_to_samples(n_of_frames));
 					buf.fill(0.);
 					buf
 				},
@@ -124,11 +124,11 @@ impl InputStreamPoller {
 			(
 				InterleavedAudioBuffer::new(self.sampling_ctx(), {
 					let mut out =
-						vec![0.; shared.buffer.len() - self.sampling_ctx().n_of_samples(skip)];
+						vec![0.; shared.buffer.len() - self.sampling_ctx().frames_to_samples(skip)];
 					if !out.is_empty() {
 						shared
 							.buffer
-							.copy_to_slice(self.sampling_ctx().n_of_samples(skip), &mut out);
+							.copy_to_slice(self.sampling_ctx().frames_to_samples(skip), &mut out);
 					}
 					out
 				}),
@@ -182,7 +182,7 @@ mod tests {
 		let sampling_ctx = SamplingCtx::new(SampleRate(44100), 2);
 		let poller = InputStreamPoller::new(
 			sampling_ctx,
-			sampling_ctx.to_n_of_frames(Duration::from_secs(2)),
+			sampling_ctx.duration_to_frames(Duration::from_secs(2)),
 			None,
 		)
 		.unwrap();

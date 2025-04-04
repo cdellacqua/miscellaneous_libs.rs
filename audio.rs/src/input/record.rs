@@ -30,7 +30,7 @@ impl AudioRecorder {
 		capacity: NOfFrames,
 		device_name: Option<&str>,
 	) -> Result<Self, AudioStreamBuilderError> {
-		let buffer_size = sampling_ctx.n_of_samples(capacity);
+		let buffer_size = sampling_ctx.frames_to_samples(capacity);
 		let shared = Arc::new(Mutex::new(RecorderState {
 			buffer_size,
 			buffer: Vec::with_capacity(buffer_size),
@@ -131,11 +131,11 @@ mod tests {
 		let sampling_ctx = SamplingCtx::new(SampleRate(44100), 2);
 		let mut recorder = AudioRecorder::new(
 			sampling_ctx,
-			sampling_ctx.to_n_of_frames(Duration::from_secs(2)),
+			sampling_ctx.duration_to_frames(Duration::from_secs(2)),
 			None,
 		)
 		.unwrap();
-		sleep(sampling_ctx.to_duration(recorder.capacity()));
+		sleep(sampling_ctx.frames_to_duration(recorder.capacity()));
 		let snapshot = recorder.take();
 		let mut player = AudioPlayer::new(sampling_ctx, None).unwrap();
 		assert_eq!(player.state(), AudioStreamSamplingState::Sampling);

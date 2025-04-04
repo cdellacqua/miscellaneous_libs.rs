@@ -72,7 +72,7 @@ impl InputStream {
 												.callback
 												.duration_since(&info.timestamp().capture)
 												.unwrap_or(Duration::ZERO) + sampling_ctx
-												.to_duration(input_buffer_frames),
+												.frames_to_duration(input_buffer_frames),
 										);
 									},
 								);

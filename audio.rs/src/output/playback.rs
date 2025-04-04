@@ -46,14 +46,16 @@ impl AudioPlayer {
 							let clamped_frames =
 								output_frames.min(shared.signal.n_of_frames() - shared.frame_idx);
 
-							chunk.raw_buffer_mut()[..sampling_ctx.n_of_samples(clamped_frames)]
+							chunk.raw_buffer_mut()
+								[..sampling_ctx.frames_to_samples(clamped_frames)]
 								.copy_from_slice(
 									&shared.signal.raw_buffer()[sampling_ctx
-										.n_of_samples(shared.frame_idx)
+										.frames_to_samples(shared.frame_idx)
 										..sampling_ctx
-											.n_of_samples(shared.frame_idx + clamped_frames)],
+											.frames_to_samples(shared.frame_idx + clamped_frames)],
 								);
-							chunk.raw_buffer_mut()[sampling_ctx.n_of_samples(clamped_frames)..]
+							chunk.raw_buffer_mut()
+								[sampling_ctx.frames_to_samples(clamped_frames)..]
 								.fill(0.);
 
 							shared.frame_idx += clamped_frames;

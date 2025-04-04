@@ -104,7 +104,8 @@ mod tests {
 
 	use crate::{
 		analysis::{windowing_fns::HannWindow, Harmonic},
-		output::harmonics_to_samples, SampleRate,
+		output::harmonics_to_samples,
+		SampleRate,
 	};
 
 	use super::*;

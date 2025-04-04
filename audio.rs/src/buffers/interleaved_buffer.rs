@@ -265,7 +265,7 @@ mod tests {
 		let sampling_ctx = SamplingCtx::new(SampleRate(44100), 1);
 		let snapshot = InterleavedAudioBuffer::new(sampling_ctx, vec![0.; 4410]);
 		assert_eq!(
-			sampling_ctx.to_duration(snapshot.n_of_frames()),
+			sampling_ctx.frames_to_duration(snapshot.n_of_frames()),
 			Duration::from_millis(100)
 		);
 	}

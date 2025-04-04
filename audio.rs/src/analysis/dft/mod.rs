@@ -17,7 +17,8 @@ mod tests {
 			windowing_fns::HannWindow,
 			DftCtx, Harmonic,
 		},
-		output::harmonics_to_samples, SampleRate,
+		output::harmonics_to_samples,
+		SampleRate,
 	};
 
 	#[test]
