@@ -3,8 +3,9 @@ resolver = "2"
 
 members = [
 	"audio.rs",
-	"math_utils.rs",
 	"buffer_hopper.rs",
+	"debug_view.rs",
+	"math_utils.rs",
 	"mutex_ext.rs",
 	"resource_daemon.rs",
 ]
