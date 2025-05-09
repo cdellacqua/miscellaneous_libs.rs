@@ -1,5 +1,3 @@
-#![cfg(debug_assertions)]
-
 use macroquad::prelude::*;
 use mutex_ext::{CondvarExt, ReactiveCondvar};
 use std::{
