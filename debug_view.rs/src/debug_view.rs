@@ -36,8 +36,6 @@ impl DebugView {
 		}
 	}
 
-	/// # Panics
-	/// - if the channel used to send commands to the UI thread is broken
 	pub fn run(&mut self, command: Box<dyn FnOnce() + Send + Sync + 'static>) {
 		self.latest_command
 			.with_lock_mut(|latest_command| latest_command.replace(command));
