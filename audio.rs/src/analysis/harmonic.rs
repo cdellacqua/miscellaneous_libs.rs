@@ -59,4 +59,11 @@ impl Harmonic {
 		// where P is power, V is voltage and R is resistance.
 		self.phasor.norm_sqr()
 	}
+
+	#[allow(non_snake_case)]
+	#[must_use]
+	pub fn dB(&self) -> f32 {
+		// or, equivalently, `20. * self.phasor.norm().log10()`
+		10. * self.phasor.norm_sqr().log10()
+	}
 }
