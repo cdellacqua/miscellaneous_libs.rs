@@ -68,7 +68,7 @@ dependencies = [
  "mutex_ext",
  "rand",
  "resource_daemon",
- "ringbuffer 0.15.0 (git+https://github.com/cdellacqua/ringbuffer.rs.git?rev=d7bcb7a1817f8c841605025a7f00441c499e547c)",
+ "ringbuffer",
  "rustfft",
  "thiserror 2.0.11",
 ]
@@ -657,7 +657,7 @@ dependencies = [
 name = "math_utils"
 version = "0.1.0"
 dependencies = [
- "ringbuffer 0.15.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "ringbuffer",
  "thiserror 2.0.11",
 ]
 
@@ -1007,14 +1007,8 @@ version = "0.1.0"
 
 [[package]]
 name = "ringbuffer"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3df6368f71f205ff9c33c076d170dd56ebf68e8161c733c0caa07a7a5509ed53"
-
-[[package]]
-name = "ringbuffer"
-version = "0.15.0"
-source = "git+https://github.com/cdellacqua/ringbuffer.rs.git?rev=d7bcb7a1817f8c841605025a7f00441c499e547c#d7bcb7a1817f8c841605025a7f00441c499e547c"
+version = "0.16.0"
+source = "git+https://github.com/cdellacqua/ringbuffer.rs.git?rev=caaf117582353aa201f75bf682ea63d6cb546236#caaf117582353aa201f75bf682ea63d6cb546236"
 
 [[package]]
 name = "rustc-hash"

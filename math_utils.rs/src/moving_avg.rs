@@ -18,7 +18,7 @@ impl<T: Add<T, Output = T> + DivisibleByUsize + Default + Copy> MovingAverage<T>
 	}
 
 	pub fn push(&mut self, value: T) {
-		self.series.push(value);
+		self.series.enqueue(value);
 	}
 
 	#[must_use]

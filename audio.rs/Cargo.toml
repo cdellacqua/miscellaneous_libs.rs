@@ -21,7 +21,7 @@ mutex_ext = { path = "../mutex_ext.rs" }
 resource_daemon = { path = "../resource_daemon.rs" }
 math_utils = { path = "../math_utils.rs" }
 thiserror = "2.0.11"
-ringbuffer = { git = "https://github.com/cdellacqua/ringbuffer.rs.git", rev = "d7bcb7a1817f8c841605025a7f00441c499e547c" }
+ringbuffer = { git = "https://github.com/cdellacqua/ringbuffer.rs.git", rev = "caaf117582353aa201f75bf682ea63d6cb546236" }
 derive_more = { version = "1.0.0", features = ["add", "add_assign", "deref", "deref_mut", "mul", "mul_assign", "from"] }
 
 [dev-dependencies]

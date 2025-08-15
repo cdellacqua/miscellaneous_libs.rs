@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ringbuffer = "0.15.0"
+ringbuffer = { git = "https://github.com/cdellacqua/ringbuffer.rs.git", rev = "caaf117582353aa201f75bf682ea63d6cb546236" }
 thiserror = "2.0.11"
