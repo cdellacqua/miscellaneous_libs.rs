@@ -8,7 +8,7 @@ pub trait MultiplyByUsize {
 	fn mul_usize(self, rhs: usize) -> Self;
 }
 
-macro_rules! impl_mul_for_float {
+macro_rules! impl_mul_for {
 	($t:ty) => {
 		impl MultiplyByUsize for $t {
 			fn mul_usize(self, rhs: usize) -> Self {
@@ -17,19 +17,19 @@ macro_rules! impl_mul_for_float {
 		}
 	};
 	($t:ty, $($others:ty),+) => {
-		impl_mul_for_float!($t);
-		impl_mul_for_float!($($others),+);
+		impl_mul_for!($t);
+		impl_mul_for!($($others),+);
 	};
 }
 
-impl_mul_for_float!(f32, f64);
+impl_mul_for!(f32, f64);
 
 pub trait DivisibleByUsize {
 	#[must_use]
 	fn div_usize(self, rhs: usize) -> Self;
 }
 
-macro_rules! impl_div_for_float {
+macro_rules! impl_div_for {
 	($t:ty) => {
 		impl DivisibleByUsize for $t {
 			fn div_usize(self, rhs: usize) -> Self {
@@ -38,12 +38,12 @@ macro_rules! impl_div_for_float {
 		}
 	};
 	($t:ty, $($others:ty),+) => {
-		impl_div_for_float!($t);
-		impl_div_for_float!($($others),+);
+		impl_div_for!($t);
+		impl_div_for!($($others),+);
 	};
 }
 
-impl_div_for_float!(f32, f64);
+impl_div_for!(f32, f64);
 
 impl DivisibleByUsize for Duration {
 	fn div_usize(self, rhs: usize) -> Duration {
@@ -55,41 +55,28 @@ pub trait Average {
 	#[must_use]
 	fn avg(self, rhs: Self) -> Self;
 }
-
-impl Average for f32 {
-	fn avg(self, rhs: Self) -> Self {
-		(self + rhs) / 2.
-	}
-}
-
-impl Average for f64 {
-	fn avg(self, rhs: Self) -> Self {
-		(self + rhs) / 2.
-	}
-}
-
-macro_rules! impl_avg_for_integer {
+macro_rules! impl_avg_for {
 	($t:ty) => {
 		impl Average for $t {
 			fn avg(self, rhs: Self) -> Self {
-				(self + rhs) / 2
+				Self::midpoint(self, rhs)
 			}
 		}
 	};
 	($t:ty, $($others:ty),+) => {
-		impl_avg_for_integer!($t);
-		impl_avg_for_integer!($($others),+);
+		impl_avg_for!($t);
+		impl_avg_for!($($others),+);
 	};
 }
 
-impl_avg_for_integer!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize);
+impl_avg_for!(u8, u16, u32, u64, u128, isize, i8, i16, i32, i64, i128, usize/* , f16 */, f32, f64/* , f128 */);
 
 pub trait RoundToUsize {
 	#[must_use]
 	fn round_usize(self) -> usize;
 }
 
-macro_rules! impl_round_for_float {
+macro_rules! impl_round_for {
 	($t:ty) => {
 		#[allow(clippy::cast_sign_loss)]
 		impl RoundToUsize for $t {
@@ -99,19 +86,19 @@ macro_rules! impl_round_for_float {
 		}
 	};
 	($t:ty, $($others:ty),+) => {
-		impl_round_for_float!($t);
-		impl_round_for_float!($($others),+);
+		impl_round_for!($t);
+		impl_round_for!($($others),+);
 	};
 }
 
-impl_round_for_float!(f32, f64);
+impl_round_for!(f32, f64);
 
 pub trait TruncToUsize {
 	#[must_use]
 	fn trunc_usize(self) -> usize;
 }
 
-macro_rules! impl_trunc_for_float {
+macro_rules! impl_trunc_for {
 	($t:ty) => {
 		#[allow(clippy::cast_sign_loss)]
 		impl TruncToUsize for $t {
@@ -121,9 +108,9 @@ macro_rules! impl_trunc_for_float {
 		}
 	};
 	($t:ty, $($others:ty),+) => {
-		impl_trunc_for_float!($t);
-		impl_trunc_for_float!($($others),+);
+		impl_trunc_for!($t);
+		impl_trunc_for!($($others),+);
 	};
 }
 
-impl_trunc_for_float!(f32, f64);
+impl_trunc_for!(f32, f64);
