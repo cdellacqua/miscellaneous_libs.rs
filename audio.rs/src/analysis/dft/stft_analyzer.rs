@@ -15,6 +15,7 @@ pub struct StftAnalyzer {
 	complex_signal: Vec<Complex32>,
 	cur_transform: Vec<DiscreteHarmonic>,
 	normalization_factor: f32,
+	scratch: Vec<Complex32>,
 }
 
 impl std::fmt::Debug for StftAnalyzer {
@@ -24,6 +25,7 @@ impl std::fmt::Debug for StftAnalyzer {
 			.field("windowing_values", &self.windowing_values)
 			.field("fft_processor", &"omitted")
 			.field("complex_signal", &self.complex_signal)
+			.field("scratch", &self.scratch)
 			.field("cur_transform", &self.cur_transform)
 			.field("normalization_factor", &self.normalization_factor)
 			.finish()
@@ -35,16 +37,19 @@ impl StftAnalyzer {
 	pub fn new(dft_ctx: DftCtx, windowing_fn: &impl WindowingFn) -> Self {
 		let mut planner = FftPlanner::new();
 		let transform_size = dft_ctx.n_of_bins();
+		let fft_processor = planner.plan_fft_forward(dft_ctx.samples_per_window());
+		let scratch_len = fft_processor.get_inplace_scratch_len();
 		Self {
 			dft_ctx,
 			windowing_values: (0..dft_ctx.samples_per_window())
 				.map(|i| windowing_fn.ratio_at(i, dft_ctx.samples_per_window()))
 				.collect(),
-			fft_processor: planner.plan_fft_forward(dft_ctx.samples_per_window()),
+			fft_processor,
 			complex_signal: vec![Complex { re: 0., im: 0. }; dft_ctx.samples_per_window()],
 			cur_transform: (0..transform_size)
 				.map(|i| DiscreteHarmonic::new(Complex::ZERO, i))
 				.collect(),
+			scratch: vec![Complex::ZERO; scratch_len],
 			// https://docs.rs/rustfft/6.2.0/rustfft/index.html#normalization
 			#[allow(clippy::cast_precision_loss)]
 			normalization_factor: 1.0 / (dft_ctx.samples_per_window() as f32).sqrt(),
@@ -78,7 +83,8 @@ impl StftAnalyzer {
 			*c = Complex::new(sample * windowing_value, 0.0);
 		}
 
-		self.fft_processor.process(&mut self.complex_signal);
+		self.fft_processor
+			.process_with_scratch(&mut self.complex_signal, &mut self.scratch);
 
 		let transform_size = self.cur_transform.len();
 		self.cur_transform
