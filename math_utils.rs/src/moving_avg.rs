@@ -21,6 +21,10 @@ impl<T: Add<T, Output = T> + DivisibleByUsize + Default + Copy> MovingAverage<T>
 		self.series.enqueue(value);
 	}
 
+	pub fn n_of_samples(&mut self) -> usize {
+		self.series.len()
+	}
+
 	#[must_use]
 	pub fn is_window_full(&self) -> bool {
 		self.series.is_full()
